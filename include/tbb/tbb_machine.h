@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2018 Intel Corporation
+    Copyright (c) 2005-2016 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -210,6 +210,8 @@ template<> struct atomic_selector<8> {
         #include "machine/windows_ia32.h"
     #elif defined(_M_X64)
         #include "machine/windows_intel64.h"
+    #elif defined(_XBOX)
+        #include "machine/xbox360_ppc.h"
     #elif defined(_M_ARM) || defined(__TBB_WIN32_USE_CL_BUILTINS)
         #include "machine/msvc_armv7.h"
     #endif
@@ -241,7 +243,7 @@ template<> struct atomic_selector<8> {
         #include "machine/linux_ia64.h"
     #elif __powerpc__
         #include "machine/mac_ppc.h"
-    #elif __ARM_ARCH_7A__
+    #elif __arm__
         #include "machine/gcc_armv7.h"
     #elif __TBB_GCC_BUILTIN_ATOMICS_PRESENT
         #include "machine/gcc_generic.h"
@@ -663,15 +665,7 @@ struct machine_load_store_seq_cst<T,8> {
         return __TBB_machine_cmpswp8( (volatile void*)const_cast<volatile T*>(&location), anyvalue, anyvalue );
     }
     static void store ( volatile T &location, T value ) {
-#if __TBB_GCC_VERSION >= 40702
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
-#endif
-        // An atomic initialization leads to reading of uninitialized memory
         int64_t result = (volatile int64_t&)location;
-#if __TBB_GCC_VERSION >= 40702
-#pragma GCC diagnostic pop
-#endif
         while ( __TBB_machine_cmpswp8((volatile void*)&location, (int64_t)value, result) != result )
             result = (volatile int64_t&)location;
     }
@@ -931,7 +925,7 @@ inline __TBB_Flag __TBB_LockByte( __TBB_atomic_flag& flag ) {
 #define __TBB_UnlockByte(addr) __TBB_store_with_release((addr),0)
 #endif
 
-// lock primitives with Intel(R) Transactional Synchronization Extensions (Intel(R) TSX)
+// lock primitives with TSX
 #if ( __TBB_x86_32 || __TBB_x86_64 )  /* only on ia32/intel64 */
 inline void __TBB_TryLockByteElidedCancel() { __TBB_machine_try_lock_elided_cancel(); }
 

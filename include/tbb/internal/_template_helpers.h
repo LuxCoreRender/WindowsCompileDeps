@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2018 Intel Corporation
+    Copyright (c) 2005-2016 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -60,12 +60,10 @@ template<class W>          struct is_same_type<W,W> { static const bool value = 
 template<typename T> struct is_ref { static const bool value = false; };
 template<typename U> struct is_ref<U&> { static const bool value = true; };
 
-#if __TBB_CPP11_VARIADIC_TEMPLATES_PRESENT
+#if __TBB_CPP11_RVALUE_REF_PRESENT && __TBB_CPP11_VARIADIC_TEMPLATES_PRESENT
+
 //! std::void_t internal implementation (to avoid GCC < 4.7 "template aliases" absence)
 template<typename...> struct void_t { typedef void type; };
-#endif
-
-#if __TBB_CPP11_RVALUE_REF_PRESENT && __TBB_CPP11_VARIADIC_TEMPLATES_PRESENT
 
 //! Allows to store a function parameter pack as a variable and later pass it to another function
 template< typename... Types >
@@ -153,29 +151,6 @@ stored_pack<Types...> save_pack( Types&&... types ) {
 }
 
 #endif /* __TBB_CPP11_RVALUE_REF_PRESENT && __TBB_CPP11_VARIADIC_TEMPLATES_PRESENT */
-
-#if __TBB_CPP14_INTEGER_SEQUENCE_PRESENT
-
-using std::index_sequence;
-using std::make_index_sequence;
-
-#elif __TBB_CPP11_VARIADIC_TEMPLATES_PRESENT && __TBB_CPP11_TEMPLATE_ALIASES_PRESENT
-
-template<std::size_t... S> class index_sequence {};
-
-template<std::size_t N, std::size_t... S>
-struct make_index_sequence_impl : make_index_sequence_impl < N - 1, N - 1, S... > {};
-
-template<std::size_t... S>
-struct make_index_sequence_impl <0, S...> {
-    using type = index_sequence<S...>;
-};
-
-template<std::size_t N>
-using make_index_sequence = typename tbb::internal::make_index_sequence_impl<N>::type;
-
-#endif /* __TBB_CPP14_INTEGER_SEQUENCE_PRESENT */
-
 } } // namespace internal, namespace tbb
 
 #endif /* __TBB_template_helpers_H */

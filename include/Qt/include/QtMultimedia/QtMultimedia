@@ -2,10 +2,6 @@
 #define QT_QTMULTIMEDIA_MODULE_H
 #include <QtCore/QtCore>
 #include <QtGui/QtGui>
-#include "qabstractvideobuffer.h"
-#include "qabstractvideosurface.h"
-#include "qvideoframe.h"
-#include "qvideosurfaceformat.h"
 #include "qaudio.h"
 #include "qaudiodeviceinfo.h"
 #include "qaudioengine.h"
@@ -13,4 +9,8 @@
 #include "qaudioformat.h"
 #include "qaudioinput.h"
 #include "qaudiooutput.h"
+#include "qabstractvideobuffer.h"
+#include "qabstractvideosurface.h"
+#include "qvideoframe.h"
+#include "qvideosurfaceformat.h"
 #endif

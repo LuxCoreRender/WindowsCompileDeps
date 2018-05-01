@@ -27,11 +27,11 @@
 #include "membersheet.h"
 #include "propertysheet.h"
 #include "taskmenu.h"
+#include "extension.h"
+#include "qextensionmanager.h"
 #include "abstractformbuilder.h"
 #include "container.h"
 #include "customwidget.h"
 #include "formbuilder.h"
 #include "qdesignerexportwidget.h"
-#include "extension.h"
-#include "qextensionmanager.h"
 #endif

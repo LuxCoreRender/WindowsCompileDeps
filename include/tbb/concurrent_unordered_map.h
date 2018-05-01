@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2018 Intel Corporation
+    Copyright (c) 2005-2016 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -44,6 +44,22 @@ protected:
 
     concurrent_unordered_map_traits() : my_hash_compare() {}
     concurrent_unordered_map_traits(const hash_compare& hc) : my_hash_compare(hc) {}
+
+    class value_compare : public std::binary_function<value_type, value_type, bool>
+    {
+        friend class concurrent_unordered_map_traits<Key, T, Hash_compare, Allocator, Allow_multimapping>;
+
+    public:
+        bool operator()(const value_type& left, const value_type& right) const
+        {
+            return (my_hash_compare(left.first, right.first));
+        }
+
+        value_compare(const hash_compare& comparator) : my_hash_compare(comparator) {}
+
+    protected:
+        hash_compare my_hash_compare;    // the comparator predicate for keys
+    };
 
     template<class Type1, class Type2>
     static const Key& get_key(const std::pair<Type1, Type2>& value) {
@@ -99,10 +115,12 @@ public:
         const hasher& _Hasher = hasher(), const key_equal& _Key_equality = key_equal(),
         const allocator_type& a = allocator_type())
         : base_type(n_of_buckets, key_compare(_Hasher, _Key_equality), a)
-    {}
+    {
+    }
 
-    explicit concurrent_unordered_map(const Allocator& a) : base_type(base_type::initial_bucket_number, key_compare(), a)
-    {}
+    concurrent_unordered_map(const Allocator& a) : base_type(base_type::initial_bucket_number, key_compare(), a)
+    {
+    }
 
     template <typename Iterator>
     concurrent_unordered_map(Iterator first, Iterator last, size_type n_of_buckets = base_type::initial_bucket_number,
@@ -124,11 +142,11 @@ public:
     }
 #endif //# __TBB_INITIALIZER_LISTS_PRESENT
 
-#if __TBB_CPP11_RVALUE_REF_PRESENT
-#if !__TBB_IMPLICIT_MOVE_PRESENT
+#if __TBB_CPP11_IMPLICIT_MOVE_MEMBERS_GENERATION_BROKEN
     concurrent_unordered_map(const concurrent_unordered_map& table)
         : base_type(table)
-    {}
+    {
+    }
 
     concurrent_unordered_map& operator=(const concurrent_unordered_map& table)
     {
@@ -137,22 +155,25 @@ public:
 
     concurrent_unordered_map(concurrent_unordered_map&& table)
         : base_type(std::move(table))
-    {}
+    {
+    }
 
     concurrent_unordered_map& operator=(concurrent_unordered_map&& table)
     {
         return static_cast<concurrent_unordered_map&>(base_type::operator=(std::move(table)));
     }
-#endif //!__TBB_IMPLICIT_MOVE_PRESENT
-
-    concurrent_unordered_map(concurrent_unordered_map&& table, const Allocator& a) : base_type(std::move(table), a)
-    {}
-#endif //__TBB_CPP11_RVALUE_REF_PRESENT
+#endif //__TBB_CPP11_IMPLICIT_MOVE_MEMBERS_GENERATION_BROKEN
 
     concurrent_unordered_map(const concurrent_unordered_map& table, const Allocator& a)
         : base_type(table, a)
-    {}
+    {
+    }
 
+#if __TBB_CPP11_RVALUE_REF_PRESENT
+    concurrent_unordered_map(concurrent_unordered_map&& table, const Allocator& a) : base_type(std::move(table), a)
+    {
+    }
+#endif
     // Observers
     mapped_type& operator[](const key_type& key)
     {
@@ -235,10 +256,12 @@ public:
         const hasher& _Hasher = hasher(), const key_equal& _Key_equality = key_equal(),
         const allocator_type& a = allocator_type())
         : base_type(n_of_buckets, key_compare(_Hasher, _Key_equality), a)
-    {}
+    {
+    }
 
-    explicit concurrent_unordered_multimap(const Allocator& a) : base_type(base_type::initial_bucket_number, key_compare(), a)
-    {}
+    concurrent_unordered_multimap(const Allocator& a) : base_type(base_type::initial_bucket_number, key_compare(), a)
+    {
+    }
 
     template <typename Iterator>
     concurrent_unordered_multimap(Iterator first, Iterator last, size_type n_of_buckets = base_type::initial_bucket_number,
@@ -260,11 +283,11 @@ public:
     }
 #endif //# __TBB_INITIALIZER_LISTS_PRESENT
 
-#if __TBB_CPP11_RVALUE_REF_PRESENT
-#if !__TBB_IMPLICIT_MOVE_PRESENT
+#if __TBB_CPP11_IMPLICIT_MOVE_MEMBERS_GENERATION_BROKEN
     concurrent_unordered_multimap(const concurrent_unordered_multimap& table)
         : base_type(table)
-    {}
+    {
+    }
 
     concurrent_unordered_multimap& operator=(const concurrent_unordered_multimap& table)
     {
@@ -273,21 +296,25 @@ public:
 
     concurrent_unordered_multimap(concurrent_unordered_multimap&& table)
         : base_type(std::move(table))
-    {}
+    {
+    }
 
     concurrent_unordered_multimap& operator=(concurrent_unordered_multimap&& table)
     {
         return static_cast<concurrent_unordered_multimap&>(base_type::operator=(std::move(table)));
     }
-#endif //!__TBB_IMPLICIT_MOVE_PRESENT
-
-    concurrent_unordered_multimap(concurrent_unordered_multimap&& table, const Allocator& a) : base_type(std::move(table), a)
-    {}
-#endif //__TBB_CPP11_RVALUE_REF_PRESENT
+#endif //__TBB_CPP11_IMPLICIT_MOVE_MEMBERS_GENERATION_BROKEN
 
     concurrent_unordered_multimap(const concurrent_unordered_multimap& table, const Allocator& a)
         : base_type(table, a)
-    {}
+    {
+    }
+
+#if __TBB_CPP11_RVALUE_REF_PRESENT
+    concurrent_unordered_multimap(concurrent_unordered_multimap&& table, const Allocator& a) : base_type(std::move(table), a)
+    {
+    }
+#endif
 };
 } // namespace interface5
 

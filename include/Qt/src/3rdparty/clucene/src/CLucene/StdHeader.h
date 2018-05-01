@@ -123,6 +123,9 @@ extern int _lucene_counter_break; //can set a watch on this
 #endif
 
 #if !defined(LUCENE_DISABLE_HASHING) && defined(_CL_HAVE_HASH_MAP) && defined(_CL_HAVE_HASH_SET)
+	#if (defined(_MSC_VER) && (_MSC_VER >= 1900))
+	#define _SILENCE_STDEXT_HASH_DEPRECATION_WARNINGS
+	#endif
 	//hashing is all or nothing!
 	#include <hash_map>
 	#include <hash_set>

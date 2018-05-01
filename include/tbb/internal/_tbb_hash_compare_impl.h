@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2018 Intel Corporation
+    Copyright (c) 2005-2016 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -47,7 +47,6 @@ public:
     }
 
     bool operator()(const Key& key1, const Key& key2) const {
-        // TODO: get rid of the result invertion
         return (!my_key_compare_object(key1, key2));
     }
 

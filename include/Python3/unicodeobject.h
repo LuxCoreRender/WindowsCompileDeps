@@ -176,7 +176,7 @@ typedef unsigned char Py_UCS1;
 
 #define Py_UNICODE_FILL(target, value, length) \
     do {Py_ssize_t i_; Py_UNICODE *t_ = (target); Py_UNICODE v_ = (value);\
-    for (i_ = 0; i_ < (length); i_++) t_[i_] = v_;\
+        for (i_ = 0; i_ < (length); i_++) t_[i_] = v_;\
     } while (0)
 
 /* macros to work with surrogates */
@@ -749,7 +749,7 @@ PyAPI_FUNC(Py_UCS4) _PyUnicode_FindMaxChar (
 #endif
 
 /* Copy the string into a UCS4 buffer including the null character if copy_null
-   is set. Return NULL and raise an exception on error. Raise a ValueError if
+   is set. Return NULL and raise an exception on error. Raise a SystemError if
    the buffer is smaller than the string. Return buffer on success.
 
    buflen is the length of the buffer in (Py_UCS4) characters. */
@@ -764,23 +764,27 @@ PyAPI_FUNC(Py_UCS4*) PyUnicode_AsUCS4(
    exception set. */
 PyAPI_FUNC(Py_UCS4*) PyUnicode_AsUCS4Copy(PyObject *unicode);
 
+#ifndef Py_LIMITED_API
 /* Return a read-only pointer to the Unicode object's internal
    Py_UNICODE buffer.
    If the wchar_t/Py_UNICODE representation is not yet available, this
    function will calculate it. */
 
-#ifndef Py_LIMITED_API
 PyAPI_FUNC(Py_UNICODE *) PyUnicode_AsUnicode(
     PyObject *unicode           /* Unicode object */
     );
-#endif
+
+/* Similar to PyUnicode_AsUnicode(), but raises a ValueError if the string
+   contains null characters. */
+PyAPI_FUNC(const Py_UNICODE *) _PyUnicode_AsUnicode(
+    PyObject *unicode           /* Unicode object */
+    );
 
 /* Return a read-only pointer to the Unicode object's internal
    Py_UNICODE buffer and save the length at size.
    If the wchar_t/Py_UNICODE representation is not yet available, this
    function will calculate it. */
 
-#ifndef Py_LIMITED_API
 PyAPI_FUNC(Py_UNICODE *) PyUnicode_AsUnicodeAndSize(
     PyObject *unicode,          /* Unicode object */
     Py_ssize_t *size            /* location where to save the length */
@@ -823,7 +827,7 @@ PyAPI_FUNC(int) PyUnicode_WriteChar(
 PyAPI_FUNC(Py_UNICODE) PyUnicode_GetMax(void);
 #endif
 
-/* Resize an Unicode object. The length is the number of characters, except
+/* Resize a Unicode object. The length is the number of characters, except
    if the kind of the string is PyUnicode_WCHAR_KIND: in this case, the length
    is the number of Py_UNICODE characters.
 
@@ -844,17 +848,13 @@ PyAPI_FUNC(int) PyUnicode_Resize(
     Py_ssize_t length           /* New length */
     );
 
-/* Coerce obj to an Unicode object and return a reference with
-   *incremented* refcount.
+/* Decode obj to a Unicode object.
 
-   Coercion is done in the following way:
+   bytes, bytearray and other bytes-like objects are decoded according to the
+   given encoding and error handler. The encoding and error handler can be
+   NULL to have the interface use UTF-8 and "strict".
 
-   1. bytes, bytearray and other bytes-like objects are decoded
-      under the assumptions that they contain data using the UTF-8
-      encoding. Decoding is done in "strict" mode.
-
-   2. All other objects (including Unicode objects) raise an
-      exception.
+   All other objects (including Unicode objects) raise an exception.
 
    The API returns NULL in case of an error. The caller is responsible
    for decref'ing the returned objects.
@@ -867,13 +867,9 @@ PyAPI_FUNC(PyObject*) PyUnicode_FromEncodedObject(
     const char *errors          /* error handling */
     );
 
-/* Coerce obj to an Unicode object and return a reference with
-   *incremented* refcount.
-
-   Unicode objects are passed back as-is (subclasses are converted to
-   true Unicode objects), all other objects are delegated to
-   PyUnicode_FromEncodedObject(obj, NULL, "strict") which results in
-   using UTF-8 encoding as basis for decoding the object.
+/* Copy an instance of a Unicode subtype to a new true Unicode object if
+   necessary. If obj is already a true Unicode object (not a subtype), return
+   the reference with *incremented* refcount.
 
    The API returns NULL in case of an error. The caller is responsible
    for decref'ing the returned objects.
@@ -981,7 +977,7 @@ _PyUnicodeWriter_WriteLatin1String(_PyUnicodeWriter *writer,
     Py_ssize_t len             /* length in bytes */
     );
 
-/* Get the value of the writer as an Unicode string. Clear the
+/* Get the value of the writer as a Unicode string. Clear the
    buffer of the writer. Raise an exception and return NULL
    on error. */
 PyAPI_FUNC(PyObject *)
@@ -1062,6 +1058,12 @@ PyAPI_FUNC(wchar_t*) PyUnicode_AsWideCharString(
     );
 
 #ifndef Py_LIMITED_API
+/* Similar to PyUnicode_AsWideCharString(unicode, NULL), but check if
+   the string contains null characters. */
+PyAPI_FUNC(wchar_t*) _PyUnicode_AsWideCharString(
+    PyObject *unicode           /* Unicode object */
+    );
+
 PyAPI_FUNC(void*) _PyUnicode_AsKind(PyObject *s, unsigned int kind);
 #endif
 
@@ -1578,50 +1580,41 @@ PyAPI_FUNC(PyObject*) PyUnicode_EncodeASCII(
 
    This codec uses mappings to encode and decode characters.
 
-   Decoding mappings must map single string characters to single
-   Unicode characters, integers (which are then interpreted as Unicode
-   ordinals) or None (meaning "undefined mapping" and causing an
-   error).
+   Decoding mappings must map byte ordinals (integers in the range from 0 to
+   255) to Unicode strings, integers (which are then interpreted as Unicode
+   ordinals) or None.  Unmapped data bytes (ones which cause a LookupError)
+   as well as mapped to None, 0xFFFE or '\ufffe' are treated as "undefined
+   mapping" and cause an error.
 
-   Encoding mappings must map single Unicode characters to single
-   string characters, integers (which are then interpreted as Latin-1
-   ordinals) or None (meaning "undefined mapping" and causing an
-   error).
-
-   If a character lookup fails with a LookupError, the character is
-   copied as-is meaning that its ordinal value will be interpreted as
-   Unicode or Latin-1 ordinal resp. Because of this mappings only need
-   to contain those mappings which map characters to different code
-   points.
+   Encoding mappings must map Unicode ordinal integers to bytes objects,
+   integers in the range from 0 to 255 or None.  Unmapped character
+   ordinals (ones which cause a LookupError) as well as mapped to
+   None are treated as "undefined mapping" and cause an error.
 
 */
 
 PyAPI_FUNC(PyObject*) PyUnicode_DecodeCharmap(
     const char *string,         /* Encoded string */
     Py_ssize_t length,          /* size of string */
-    PyObject *mapping,          /* character mapping
-                                   (char ordinal -> unicode ordinal) */
+    PyObject *mapping,          /* decoding mapping */
     const char *errors          /* error handling */
     );
 
 PyAPI_FUNC(PyObject*) PyUnicode_AsCharmapString(
     PyObject *unicode,          /* Unicode object */
-    PyObject *mapping           /* character mapping
-                                   (unicode ordinal -> char ordinal) */
+    PyObject *mapping           /* encoding mapping */
     );
 
 #ifndef Py_LIMITED_API
 PyAPI_FUNC(PyObject*) PyUnicode_EncodeCharmap(
     const Py_UNICODE *data,     /* Unicode char buffer */
     Py_ssize_t length,          /* Number of Py_UNICODE chars to encode */
-    PyObject *mapping,          /* character mapping
-                                   (unicode ordinal -> char ordinal) */
+    PyObject *mapping,          /* encoding mapping */
     const char *errors          /* error handling */
     );
 PyAPI_FUNC(PyObject*) _PyUnicode_EncodeCharmap(
     PyObject *unicode,          /* Unicode object */
-    PyObject *mapping,          /* character mapping
-                                   (unicode ordinal -> char ordinal) */
+    PyObject *mapping,          /* encoding mapping */
     const char *errors          /* error handling */
     );
 #endif
@@ -1630,8 +1623,8 @@ PyAPI_FUNC(PyObject*) _PyUnicode_EncodeCharmap(
    character mapping table to it and return the resulting Unicode
    object.
 
-   The mapping table must map Unicode ordinal integers to Unicode
-   ordinal integers or None (causing deletion of the character).
+   The mapping table must map Unicode ordinal integers to Unicode strings,
+   Unicode ordinal integers or None (causing deletion of the character).
 
    Mapping tables may be dictionaries or sequences. Unmapped character
    ordinals (ones which cause a LookupError) are left untouched and
@@ -1923,8 +1916,8 @@ PyAPI_FUNC(PyObject*) PyUnicode_RSplit(
 /* Translate a string by applying a character mapping table to it and
    return the resulting Unicode object.
 
-   The mapping table must map Unicode ordinal integers to Unicode
-   ordinal integers or None (causing deletion of the character).
+   The mapping table must map Unicode ordinal integers to Unicode strings,
+   Unicode ordinal integers or None (causing deletion of the character).
 
    Mapping tables may be dictionaries or sequences. Unmapped character
    ordinals (ones which cause a LookupError) are left untouched and
@@ -2008,26 +2001,52 @@ PyAPI_FUNC(int) PyUnicode_Compare(
     );
 
 #ifndef Py_LIMITED_API
+/* Compare a string with an identifier and return -1, 0, 1 for less than,
+   equal, and greater than, respectively.
+   Raise an exception and return -1 on error. */
+
 PyAPI_FUNC(int) _PyUnicode_CompareWithId(
     PyObject *left,             /* Left string */
     _Py_Identifier *right       /* Right identifier */
     );
+
+/* Test whether a unicode is equal to ASCII identifier.  Return 1 if true,
+   0 otherwise.  Return 0 if any argument contains non-ASCII characters.
+   Any error occurs inside will be cleared before return. */
+
+PyAPI_FUNC(int) _PyUnicode_EqualToASCIIId(
+    PyObject *left,             /* Left string */
+    _Py_Identifier *right       /* Right identifier */
+    );
 #endif
+
+/* Compare a Unicode object with C string and return -1, 0, 1 for less than,
+   equal, and greater than, respectively.  It is best to pass only
+   ASCII-encoded strings, but the function interprets the input string as
+   ISO-8859-1 if it contains non-ASCII characters.
+   This function does not raise exceptions. */
 
 PyAPI_FUNC(int) PyUnicode_CompareWithASCIIString(
     PyObject *left,
     const char *right           /* ASCII-encoded string */
     );
 
+#ifndef Py_LIMITED_API
+/* Test whether a unicode is equal to ASCII string.  Return 1 if true,
+   0 otherwise.  Return 0 if any argument contains non-ASCII characters.
+   Any error occurs inside will be cleared before return. */
+
+PyAPI_FUNC(int) _PyUnicode_EqualToASCIIString(
+    PyObject *left,
+    const char *right           /* ASCII-encoded string */
+    );
+#endif
+
 /* Rich compare two strings and return one of the following:
 
    - NULL in case an exception was raised
-   - Py_True or Py_False for successfully comparisons
+   - Py_True or Py_False for successful comparisons
    - Py_NotImplemented in case the type combination is unknown
-
-   Note that Py_EQ and Py_NE comparisons can cause a UnicodeWarning in
-   case the conversion of the arguments to Unicode fails with a
-   UnicodeDecodeError.
 
    Possible values for op:
 
@@ -2052,7 +2071,7 @@ PyAPI_FUNC(PyObject *) PyUnicode_Format(
 /* Checks whether element is contained in container and return 1/0
    accordingly.
 
-   element has to coerce to an one element Unicode string. -1 is
+   element has to coerce to a one element Unicode string. -1 is
    returned in case of an error. */
 
 PyAPI_FUNC(int) PyUnicode_Contains(
@@ -2254,6 +2273,10 @@ PyAPI_FUNC(Py_UNICODE*) PyUnicode_AsUnicodeCopy(
 PyAPI_FUNC(int) _PyUnicode_CheckConsistency(
     PyObject *op,
     int check_content);
+#elif !defined(NDEBUG)
+/* For asserts that call _PyUnicode_CheckConsistency(), which would
+ * otherwise be a problem when building with asserts but without Py_DEBUG. */
+#define _PyUnicode_CheckConsistency(op, check_content) PyUnicode_Check(op)
 #endif
 
 /* Return an interned Unicode object for an Identifier; may fail if there is no memory.*/

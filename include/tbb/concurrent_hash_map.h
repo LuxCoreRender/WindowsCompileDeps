@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2018 Intel Corporation
+    Copyright (c) 2005-2016 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -22,10 +22,21 @@
 #define __TBB_concurrent_hash_map_H
 
 #include "tbb_stddef.h"
+
+#if !TBB_USE_EXCEPTIONS && _MSC_VER
+    // Suppress "C++ exception handler used, but unwind semantics are not enabled" warning in STL headers
+    #pragma warning (push)
+    #pragma warning (disable: 4530)
+#endif
+
 #include <iterator>
 #include <utility>      // Need std::pair
 #include <cstring>      // Need std::memset
 #include __TBB_STD_SWAP_HEADER
+
+#if !TBB_USE_EXCEPTIONS && _MSC_VER
+    #pragma warning (pop)
+#endif
 
 #include "cache_aligned_allocator.h"
 #include "tbb_allocator.h"
@@ -322,10 +333,9 @@ namespace interface5 {
 
         void advance_to_next_bucket() { // TODO?: refactor to iterator_base class
             size_t k = my_index+1;
-            __TBB_ASSERT( my_bucket, "advancing an invalid iterator?");
-            while( k <= my_map->my_mask ) {
+            while( my_bucket && k <= my_map->my_mask ) {
                 // Following test uses 2's-complement wizardry
-                if( k&(k-2) ) // not the beginning of a segment
+                if( k& (k-2) ) // not the beginning of a segment
                     ++my_bucket;
                 else my_bucket = my_map->get_bucket( k );
                 my_node = static_cast<node*>( my_bucket->node_list );
@@ -755,7 +765,7 @@ public:
     };
 
     //! Construct empty table.
-    explicit concurrent_hash_map( const allocator_type &a = allocator_type() )
+    concurrent_hash_map( const allocator_type &a = allocator_type() )
         : internal::hash_map_base(), my_allocator(a)
     {}
 
@@ -770,9 +780,7 @@ public:
     concurrent_hash_map( const concurrent_hash_map &table, const allocator_type &a = allocator_type() )
         : internal::hash_map_base(), my_allocator(a)
     {
-        call_clear_on_leave scope_guard(this);
         internal_copy(table);
-        scope_guard.dismiss();
     }
 
 #if __TBB_CPP11_RVALUE_REF_PRESENT
@@ -791,7 +799,7 @@ public:
             this->swap(table);
         }else{
             call_clear_on_leave scope_guard(this);
-            internal_copy(std::make_move_iterator(table.begin()), std::make_move_iterator(table.end()), table.size());
+            internal_copy(std::make_move_iterator(table.begin()), std::make_move_iterator(table.end()));
             scope_guard.dismiss();
         }
     }
@@ -802,9 +810,8 @@ public:
     concurrent_hash_map( I first, I last, const allocator_type &a = allocator_type() )
         : my_allocator(a)
     {
-        call_clear_on_leave scope_guard(this);
-        internal_copy(first, last, std::distance(first, last));
-        scope_guard.dismiss();
+        reserve( std::distance(first, last) ); // TODO: load_factor?
+        internal_copy(first, last);
     }
 
 #if __TBB_INITIALIZER_LISTS_PRESENT
@@ -812,9 +819,8 @@ public:
     concurrent_hash_map( std::initializer_list<value_type> il, const allocator_type &a = allocator_type() )
         : my_allocator(a)
     {
-        call_clear_on_leave scope_guard(this);
-        internal_copy(il.begin(), il.end(), il.size());
-        scope_guard.dismiss();
+        reserve(il.size());
+        internal_copy(il.begin(), il.end());
     }
 
 #endif //__TBB_INITIALIZER_LISTS_PRESENT
@@ -851,7 +857,8 @@ public:
     //! Assignment
     concurrent_hash_map& operator=( std::initializer_list<value_type> il ) {
         clear();
-        internal_copy(il.begin(), il.end(), il.size());
+        reserve(il.size());
+        internal_copy(il.begin(), il.end());
         return *this;
     }
 #endif //__TBB_INITIALIZER_LISTS_PRESENT
@@ -1076,7 +1083,7 @@ protected:
     void internal_copy( const concurrent_hash_map& source );
 
     template<typename I>
-    void internal_copy( I first, I last, size_type reserve_size );
+    void internal_copy( I first, I last );
 
     //! Fast find when no concurrent erasure is used. For internal use inside TBB only!
     /** Return pointer to item with given key, or NULL if no such item exists.
@@ -1432,9 +1439,9 @@ void concurrent_hash_map<Key,T,HashCompare,A>::clear() {
 
 template<typename Key, typename T, typename HashCompare, typename A>
 void concurrent_hash_map<Key,T,HashCompare,A>::internal_copy( const concurrent_hash_map& source ) {
+    reserve( source.my_size ); // TODO: load_factor?
     hashcode_t mask = source.my_mask;
     if( my_mask == mask ) { // optimized version
-        reserve( source.my_size ); // TODO: load_factor?
         bucket *dst = 0, *src = 0;
         bool rehash_required = false;
         for( hashcode_t k = 0; k <= mask; k++ ) {
@@ -1451,13 +1458,12 @@ void concurrent_hash_map<Key,T,HashCompare,A>::internal_copy( const concurrent_h
             }
         }
         if( rehash_required ) rehash();
-    } else internal_copy( source.begin(), source.end(), source.my_size );
+    } else internal_copy( source.begin(), source.end() );
 }
 
 template<typename Key, typename T, typename HashCompare, typename A>
 template<typename I>
-void concurrent_hash_map<Key,T,HashCompare,A>::internal_copy(I first, I last, size_type reserve_size) {
-    reserve( reserve_size ); // TODO: load_factor?
+void concurrent_hash_map<Key,T,HashCompare,A>::internal_copy(I first, I last) {
     hashcode_t m = my_mask;
     for(; first != last; ++first) {
         hashcode_t h = my_hash_compare.hash( (*first).first );
