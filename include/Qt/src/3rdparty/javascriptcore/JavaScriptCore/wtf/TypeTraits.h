@@ -170,8 +170,16 @@ namespace WTF {
 
     // GCC's libstdc++ 20070724 and later supports C++ TR1 type_traits in the std namespace.
     // VC10 (VS2010) and later support C++ TR1 type_traits in the std::tr1 namespace.
+    // VC14 (VS2015) and later support C++11 type_traits in the std namespace, but old TR1 names
+    // have been removed. See https://msdn.microsoft.com/en-us/library/vstudio/bb531344(v=vs.140).aspx
+    // for details.
+#if (defined(_MSC_VER) && (_MSC_VER >= 1900))
+    template<typename T> struct HasTrivialConstructor : public std::is_trivially_default_constructible<T> { };
+    template<typename T> struct HasTrivialDestructor : public std::is_trivially_destructible<T> { };
+#else
     template<typename T> struct HasTrivialConstructor : public std::tr1::has_trivial_constructor<T> { };
     template<typename T> struct HasTrivialDestructor : public std::tr1::has_trivial_destructor<T> { };
+#endif
 
 #else
 

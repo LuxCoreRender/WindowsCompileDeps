@@ -217,17 +217,28 @@ public:
 
 //A collection that contains no duplicates
 //does not guarantee that the order will remain constant over time
+// MSVC2015: https://codereview.qt-project.org/#/c/110682/3//ALL,unified
 template<typename _kt, typename _vt, 
 	typename _Compare,
 	typename _KeyDeletor=CL_NS(util)::Deletor::Dummy,
 	typename _ValueDeletor=CL_NS(util)::Deletor::Dummy>
 class CLSet:public __CLMap<_kt,_vt,
+#if (defined(_MSC_VER) && (_MSC_VER >= 1900))
+	CL_NS_STD(map)<_kt,_vt>,
+#else
 	CL_NS_STD(map)<_kt,_vt, _Compare>,
+#endif
 	_KeyDeletor,_ValueDeletor>
 {
+#if (defined(_MSC_VER) && (_MSC_VER >= 1900))
+	typedef typename CL_NS_STD(map)<_kt,_vt> _base;
+	typedef __CLMap<_kt, _vt, CL_NS_STD(map)<_kt,_vt>,
+		_KeyDeletor,_ValueDeletor> _this;
+#else
 	typedef typename CL_NS_STD(map)<_kt,_vt,_Compare> _base;
 	typedef __CLMap<_kt, _vt, CL_NS_STD(map)<_kt,_vt, _Compare>,
 		_KeyDeletor,_ValueDeletor> _this;
+#endif
 public:
 	CLSet ( const bool deleteKey=false, const bool deleteValue=false )
 	{

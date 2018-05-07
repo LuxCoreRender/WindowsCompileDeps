@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2018 Intel Corporation
+    Copyright (c) 2005-2016 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -103,7 +103,7 @@ public:
         serial = serial_in_order
     };
 protected:
-    explicit filter( bool is_serial_ ) :
+    filter( bool is_serial_ ) :
         next_filter_in_pipeline(not_in_pipeline()),
         my_input_buffer(NULL),
         my_filter_mode(static_cast<unsigned char>((is_serial_ ? serial : parallel) | exact_exception_propagation)),
@@ -112,7 +112,7 @@ protected:
         next_segment(NULL)
     {}
 
-    explicit filter( mode filter_mode ) :
+    filter( mode filter_mode ) :
         next_filter_in_pipeline(not_in_pipeline()),
         my_input_buffer(NULL),
         my_filter_mode(static_cast<unsigned char>(filter_mode | exact_exception_propagation)),
@@ -205,7 +205,7 @@ public:
         end_of_stream
     };
 protected:
-    explicit thread_bound_filter(mode filter_mode):
+    thread_bound_filter(mode filter_mode):
          filter(static_cast<mode>(filter_mode | filter::filter_is_bound))
     {
         __TBB_ASSERT(filter_mode & filter::filter_is_serial, "thread-bound filters must be serial");

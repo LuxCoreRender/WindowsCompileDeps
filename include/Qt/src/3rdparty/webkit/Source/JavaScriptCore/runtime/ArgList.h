@@ -174,7 +174,10 @@ namespace JSC {
         void operator delete[](void*);
 
         void* operator new(size_t, void*);
+// FIXME: strange magic
+#if !(defined(_MSC_VER) && (_MSC_VER >= 1900))
         void operator delete(void*, size_t);
+#endif
     };
 
     class ArgList {
