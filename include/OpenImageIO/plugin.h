@@ -43,12 +43,11 @@
 
 #include <string>
 
-#include "export.h"
-#include "oiioversion.h"
+#include <OpenImageIO/export.h>
+#include <OpenImageIO/oiioversion.h>
 
 
-OIIO_NAMESPACE_ENTER
-{
+OIIO_NAMESPACE_BEGIN
 
 namespace Plugin {
 
@@ -99,7 +98,6 @@ OIIO_API std::string geterror (void);
 
 }  // namespace Plugin
 
-}
-OIIO_NAMESPACE_EXIT
+OIIO_NAMESPACE_END
 
 #endif // OPENIMAGEIO_PLUGIN_H

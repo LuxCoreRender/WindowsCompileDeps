@@ -45,13 +45,12 @@
 
 #include <vector>
 
-#include "export.h"
-#include "oiioversion.h"
-#include "tinyformat.h"
+#include <OpenImageIO/export.h>
+#include <OpenImageIO/oiioversion.h>
+#include <OpenImageIO/strutil.h>
 
 
-OIIO_NAMESPACE_ENTER
-{
+OIIO_NAMESPACE_BEGIN
 
 
 class ArgOption;   // Forward declaration
@@ -171,6 +170,11 @@ public:
     /// description arguments passed to parse().
     void usage () const;
 
+    /// Print a brief usage message to stdout.  The usage message is
+    /// generated and formatted automatically based on the command and
+    /// description arguments passed to parse().
+    void briefusage () const;
+
     /// Return the entire command-line as one string.
     ///
     std::string command_line () const;
@@ -184,16 +188,23 @@ private:
     std::vector<ArgOption *> m_option;
 
     ArgOption *find_option(const char *name);
-    // void error (const char *format, ...)
-    TINYFORMAT_WRAP_FORMAT (void, error, /**/,
-        std::ostringstream msg;, msg, m_errmessage = msg.str();)
+
+    template<typename... Args>
+    void error (string_view fmt, const Args&... args) const {
+        m_errmessage = Strutil::format (fmt, args...);
+    }
 
     int found (const char *option);      // number of times option was parsed
 };
 
 
-}
-OIIO_NAMESPACE_EXIT
+
+// Define symbols that let client applications determine if newly added
+// features are supported.
+#define OIIO_ARGPARSE_SUPPORTS_BRIEFUSAGE 1
+
+
+OIIO_NAMESPACE_END
 
 
 #endif // OPENIMAGEIO_ARGPARSE_H

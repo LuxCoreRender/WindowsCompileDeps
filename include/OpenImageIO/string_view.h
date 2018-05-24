@@ -36,12 +36,13 @@
 #include <cstring>
 #include <stdexcept>
 #include <algorithm>
+#include <ostream>
 
-#include "oiioversion.h"
-#include "export.h"
+#include <OpenImageIO/oiioversion.h>
+#include <OpenImageIO/export.h>
 
 
-OIIO_NAMESPACE_ENTER {
+OIIO_NAMESPACE_BEGIN
 
 
 /// string_view : a non-owning, non-copying, non-allocating reference to a
@@ -120,9 +121,23 @@ public:
     }
 
     /// Explicitly request a 0-terminated string. USUALLY, this turns out to
-    /// be just data(), with no significant added expense. But in the more
-    /// rare case that the string_view represetns a non-0-terminated
-    /// substring, it will force an allocation and copy underneath.
+    /// be just data(), with no significant added expense (because most uses
+    /// of string_view are simple wrappers of C strings, C++ std::string, or
+    /// ustring -- all of which are 0-terminated). But in the more rare case
+    /// that the string_view represetns a non-0-terminated substring, it
+    /// will force an allocation and copy underneath.
+    ///
+    /// Caveats:
+    /// 1. This is NOT going to be part of the C++17 std::string_view, so
+    ///    it's probably best to avoid this method if you want to have 100%
+    ///    drop-in compatibility with std::string_view.
+    /// 2. It is NOT SAFE to use c_str() on a string_view whose last char
+    ///    is the end of an allocation -- because that next char may only
+    ///    *coincidentally* be a '\0', which will cause c_str() to return
+    ///    the string start (thinking it's a valid C string, so why not just
+    ///    return its address?), if there's any chance that the subsequent
+    ///    char could change from 0 to non-zero during the use of the result
+    ///    of c_str(), and thus break the assumption that it's a valid C str.
     const char * c_str() const;
 
     // assignments
@@ -349,4 +364,4 @@ inline std::ostream& operator<< (std::ostream& out, const string_view& str) {
 typedef string_view string_ref;
 
 
-} OIIO_NAMESPACE_EXIT
+OIIO_NAMESPACE_END
