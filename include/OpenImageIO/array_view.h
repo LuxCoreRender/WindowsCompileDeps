@@ -1,7 +1,6 @@
 /*
-  Copyright 2014 Larry Gritz and the other authors and contributors.
+  Copyright 2015 Larry Gritz and the other authors and contributors.
   All Rights Reserved.
-  Based on BSD-licensed software Copyright 2004 NVIDIA Corp.
 
   Redistribution and use in source and binary forms, with or without
   modification, are permitted provided that the following conditions are
@@ -32,17 +31,23 @@
 
 #pragma once
 
+#include <array>
 #include <vector>
 #include <stdexcept>
+#include <iostream>
+#include <cstddef>
+#include <initializer_list>
+#include <type_traits>
 
-#include "oiioversion.h"
-#include "strided_ptr.h"
+#include <OpenImageIO/oiioversion.h>
+#include <OpenImageIO/platform.h>
+#include <OpenImageIO/dassert.h>
+
+OIIO_NAMESPACE_BEGIN
 
 
-OIIO_NAMESPACE_ENTER {
 
-
-/// array_view : a non-owning reference to a contiguous array with known
+/// array_view<T> : a non-owning reference to a contiguous array with known
 /// length.  An array_view<T> is mutable (the values in the array may be
 /// modified), whereas an array_view<const T> is not mutable.
 ///
@@ -62,270 +67,185 @@ OIIO_NAMESPACE_ENTER {
 
 template <typename T>
 class array_view {
+    static_assert (std::is_array<T>::value == false, "can't have array_view of an array");
 public:
-    typedef T value_type;
-    typedef T* pointer;
-    typedef const T* const_pointer;
-    typedef T& reference;
-    typedef const T& const_reference;
-    typedef const_pointer const_iterator;
-    typedef const_iterator iterator;
-    typedef std::reverse_iterator<const_iterator> const_reverse_iterator;
-    typedef const_reverse_iterator reverse_iterator;
-    typedef size_t size_type;
-    typedef ptrdiff_t difference_type;
-    static const size_type npos = ~size_type(0);
+    using size_type       = size_t;
+    using value_type      = T;
+    using pointer         = T*;
+    using const_pointer   = const T*;
+    using reference       = T&;
+    using iterator        = T*;
+    using const_iterator  = const T*;
+    using nonconst_value_type = typename std::remove_const<value_type>::type;
 
     /// Default ctr -- points to nothing
-    array_view () : m_data(NULL), m_len(0) {}
+    constexpr array_view () { }
 
     /// Copy constructor
-    array_view (const array_view &copy)
-        : m_data(copy.data()), m_len(copy.size()) {}
+    constexpr array_view (const array_view &copy) noexcept
+        : m_data(copy.data()), m_size(copy.size()) { }
 
     /// Construct from T* and length.
-    array_view (T *data, size_t len) : m_data(data), m_len(len) {}
+    constexpr array_view (pointer data, size_t size) noexcept
+        : m_data(data), m_size(size) { }
+
+    /// Construct from begin and end pointers
+    constexpr array_view (pointer b, pointer e) noexcept
+        : m_data(b), m_size(e-b) { }
 
     /// Construct from a single T&.
-    array_view (T &data) : m_data(&data), m_len(1) {}
-
-    /// Construct from a range (begin and end pointers).
-    array_view (T *begin, T *end)
-        : m_data(begin), m_len(end-begin) {}
+    constexpr array_view (T &data) : m_data(&data), m_size(1) { }
 
     /// Construct from a fixed-length C array.  Template magic automatically
     /// finds the length from the declared type of the array.
     template<size_t N>
-    array_view (T (&data)[N]) : m_data(data), m_len(N) {}
+    constexpr array_view (T (&data)[N]) : m_data(data), m_size(N) { }
 
     /// Construct from std::vector<T>.
-    array_view (std::vector<T> &v)
-        : m_data(v.size() ? &v[0] : NULL), m_len(v.size()) {}
+    constexpr array_view (std::vector<T> &v)
+        : m_data(v.size() ? &v[0] : nullptr), m_size(v.size()) {
+    }
+
+    /// Construct from const std::vector<T>.
+    /// This turns const std::vector<T> into an array_view<const T> (the
+    /// array_view isn't const, but the data it points to will be).
+    array_view (const std::vector<typename std::remove_const<T>::type> &v)
+        : m_data(v.size() ? &v[0] : nullptr), m_size(v.size()) { }
+
+    /// Construct from mutable element std::array
+    template <size_t N>
+    constexpr array_view (std::array<nonconst_value_type, N> &arr)
+        : m_data(arr.data()), m_size(N) {}
+
+    /// Construct from read-only element std::array
+    template <size_t N>
+    constexpr array_view (const std::array<nonconst_value_type, N>& arr)
+        : m_data(arr.data()), m_size(N) {}
+
+    /// Construct an array_view from an initializer_list.
+    constexpr array_view (std::initializer_list<T> il)
+        : array_view (il.begin(), il.size()) { }
 
     // assignments
     array_view& operator= (const array_view &copy) {
         m_data = copy.data();
-        m_len = copy.size();
+        m_size = copy.size();
         return *this;
     }
 
-    // iterators
-    iterator begin() const { return m_data; }
-    iterator end() const { return m_data + m_len; }
-    const_iterator cbegin() const { return m_data; }
-    const_iterator cend() const { return m_data + m_len; }
-    reverse_iterator rbegin() const { return const_reverse_iterator (end()); }
-    reverse_iterator rend() const { return const_reverse_iterator (begin()); }
-    const_reverse_iterator crbegin() const { return const_reverse_iterator (end()); }
-    const_reverse_iterator crend() const { return const_reverse_iterator (begin()); }
+    constexpr size_t size() const noexcept { return m_size; }
 
-    size_type size() const { return m_len; }
-    size_type max_size() const { return m_len; }
-    bool empty() const { return m_len == 0; }
+    constexpr pointer data() const noexcept { return m_data; }
 
-    T& operator[] (size_type pos) const { return m_data[pos]; }
-    T& at (size_t pos) const {
-        if (pos >= m_len)
+    constexpr T& operator[] (size_t idx) const noexcept {
+        return m_data[idx];
+    }
+    T& at (size_t idx) const {
+        if (idx >= size())
             throw (std::out_of_range ("OpenImageIO::array_view::at"));
-        return m_data[pos];
-    }
-    T& front() const { return m_data[0]; }
-    T& back() const { return m_data[m_len-1]; }
-    T* data() const { return m_data; }
-
-    void clear() { m_data = NULL;  m_len = 0; }
-
-    void remove_prefix(size_type n) {
-        if (n > m_len)
-            n = m_len;
-        m_data += n;
-        m_len -= n;
-    }
-    void remove_suffix(size_type n) {
-        if (n > m_len)
-            n = m_len;
-        m_len -= n;
+        return m_data[idx];
     }
 
-    array_view slice (size_type pos, size_type n=npos) const {
-        if (pos > size())
-            throw (std::out_of_range ("OIIO::array_view::slice"));
-        if (n == npos || pos + n > size())
-            n = size() - pos;
-        return array_view (data() + pos, n);
-    }
+    constexpr T& front() const noexcept { return m_data[0]; }
+    constexpr T& back() const noexcept { return m_data[size()-1]; }
 
-    friend bool operator== (array_view<T> x, array_view<T> y) {
-        if (x.size() != y.size())  // shortcut: different sizes are not ==
-            return false;
-        if (x.data() == y.data())  // shortcut: same size, same ptr: equal
-            return true;
-        for (size_t i = 0, e = x.size(); i != e; ++i)
-            if (x[i] != y[i])
-                return false;
-        return true;
-    }
+    constexpr pointer begin() const noexcept { return m_data; }
+    constexpr pointer end() const noexcept { return m_data + m_size; }
 
-    friend bool operator!= (array_view<T> x, array_view<T> y) {
-        if (x.size() != y.size())  // shortcut: different sizes are !=
-            return true;
-        if (x.data() == y.data())  // shortcut: same size, same ptr: equal
-            return false;
-        for (size_t i = 0, e = x.size(); i != e; ++i)
-            if (x[i] == y[i])
-                return false;
-        return true;
-    }
+    constexpr const_pointer cbegin() const noexcept { return m_data; }
+    constexpr const_pointer cend() const noexcept { return m_data + m_size; }
 
 private:
-    T * m_data;
-    size_t m_len;
-
-    void init (T *data, size_t len) {
-        m_data = data;
-        m_len = len;
-    }
+    T*     m_data = nullptr;
+    size_t m_size = 0;
 };
 
 
 
 
-/// array_view_strided : a non-owning, mutable reference to a contiguous
+/// array_view_strided<T> : a non-owning, mutable reference to a contiguous
 /// array with known length and optionally non-default strides through the
-/// data.   An array_view_strided<T> is mutable (the values in the array may
+/// data.  An array_view_strided<T> is mutable (the values in the array may
 /// be modified), whereas an array_view_strided<const T> is not mutable.
 template <typename T>
 class array_view_strided {
+    static_assert (std::is_array<T>::value == false,
+                   "can't have array_view_strided of an array");
 public:
-    typedef T value_type;
-    typedef strided_ptr<T> pointer;
-    typedef strided_ptr<const T> const_pointer;
-    typedef T& reference;
-    typedef const T& const_reference;
-    typedef const_pointer const_iterator;
-    typedef pointer iterator;
-    typedef std::reverse_iterator<const_iterator> const_reverse_iterator;
-    typedef std::reverse_iterator<iterator> reverse_iterator;
-    typedef size_t size_type;
-    typedef ptrdiff_t difference_type;
-    typedef ptrdiff_t stride_t;
-    static const size_type npos = ~size_type(0);
-    static const stride_t AutoStride = ~stride_t(0);
+    using size_type       = size_t;
+    using stride_type     = ptrdiff_t;
+    using value_type      = T;
+    using pointer         = T*;
+    using const_pointer   = const T*;
+    using reference       = T&;
 
     /// Default ctr -- points to nothing
-    array_view_strided () : m_data(NULL), m_len(0), m_stride(0) {}
+    constexpr array_view_strided () {}
 
     /// Copy constructor
-    array_view_strided (const array_view_strided &copy)
-        : m_data(copy.data()), m_len(copy.size()), m_stride(copy.stride()) {}
+    constexpr array_view_strided (const array_view_strided &copy)
+        : m_data(copy.data()), m_size(copy.size()), m_stride(copy.stride()) {}
 
-    /// Construct from T* and length.
-    array_view_strided (T *data, size_t len) { init(data,len); }
-
-    /// Construct from T*, length, and stride (in bytes).
-    array_view_strided (T *data, size_t len, stride_t stride) {
-        init(data,len,stride);
-    }
+    /// Construct from T* and size, and optionally stride.
+    constexpr array_view_strided (T *data, size_t size, stride_type stride=1)
+        : m_data(data), m_size(size), m_stride(stride) { }
 
     /// Construct from a single T&.
-    array_view_strided (T &data) { init (&data, 1); }
-
-    /// Construct from a range (begin and end pointers).
-    array_view_strided (T *begin, T *end) { init (begin, end-begin); }
+    constexpr array_view_strided (T &data) : array_view_strided(&data,1,1) { }
 
     /// Construct from a fixed-length C array.  Template magic automatically
     /// finds the length from the declared type of the array.
     template<size_t N>
-    array_view_strided (T (&data)[N]) { init(data,N); }
+    constexpr array_view_strided (T (&data)[N]) : array_view_strided(data,N,1) {}
 
     /// Construct from std::vector<T>.
-    array_view_strided (std::vector<T> &v)
-        : m_data(v.size() ? &v[0] : NULL), m_len(v.size()), m_stride(sizeof(T)) {}
+    OIIO_CONSTEXPR14 array_view_strided (std::vector<T> &v)
+        : array_view_strided(v.size() ? &v[0] : nullptr, v.size(), 1) {}
+
+    /// Construct from const std::vector<T>. This turns const std::vector<T>
+    /// into an array_view_strided<const T> (the array_view_strided isn't
+    /// const, but the data it points to will be).
+    constexpr array_view_strided (const std::vector<typename std::remove_const<T>::type> &v)
+        : array_view_strided(v.size() ? &v[0] : nullptr, v.size(), 1) {}
+
+    /// Construct an array_view from an initializer_list.
+    constexpr array_view_strided (std::initializer_list<T> il)
+        : array_view_strided (il.begin(), il.size())
+    { }
+
+    /// Initialize from an array_view (stride will be 1).
+    constexpr array_view_strided (array_view<T> av)
+        : array_view_strided(av.data(), av.size(), 1) { }
 
     // assignments
     array_view_strided& operator= (const array_view_strided &copy) {
-        m_data = copy.data();
-        m_len = copy.size();
+        m_data   = copy.data();
+        m_size   = copy.size();
         m_stride = copy.stride();
         return *this;
     }
 
-    // iterators
-    iterator begin() const { return pointer(m_data,m_stride); }
-    iterator end() const { return pointer(getptr(m_len),m_stride); }
-    const_iterator cbegin() const { return const_pointer(m_data,m_stride); }
-    const_iterator cend() const { return const_pointer(getptr(m_len),m_stride); }
-    reverse_iterator rbegin() const { return reverse_iterator (end()); }
-    reverse_iterator rend() const { return reverse_iterator (begin()); }
-    const_reverse_iterator crbegin() const { return const_reverse_iterator (end()); }
-    const_reverse_iterator crend() const { return const_reverse_iterator (begin()); }
+    constexpr size_type size() const noexcept { return m_size; }
+    constexpr stride_type stride() const noexcept { return m_stride; }
 
-    size_type size() const { return m_len; }
-    size_type max_size() const { return m_len; }
-    bool empty() const { return m_len == 0; }
-    stride_t stride() const { return m_stride; }
-
-    const T& operator[] (size_type pos) const { return get(pos); }
-    const T& at (size_t pos) const {
-        if (pos >= m_len)
+    constexpr T& operator[] (size_type idx) const {
+        return m_data[m_stride*idx];
+    }
+    const T& at (size_t idx) const {
+        if (idx >= size())
             throw (std::out_of_range ("OpenImageIO::array_view_strided::at"));
-        return get(pos);
+        return m_data[m_stride*idx];
     }
-    T& front() const { return m_data[0]; }
-    T& back() const { return get(m_len-1); }
-    pointer data() const { return pointer(m_data,m_stride); }
-
-    void clear() { m_data = NULL;  m_len = 0;  m_stride = 0; }
-
-    array_view_strided slice (size_type pos, size_type n=npos) const {
-        if (pos > size())
-            throw (std::out_of_range ("OIIO::array_view_strided::slice"));
-        if (n == npos || pos + n > size())
-            n = size() - pos;
-        return array_view_strided (getptr(pos), n, m_stride);
-    }
-
-    friend bool operator== (array_view_strided<T> x, array_view_strided<T> y) {
-        if (x.size() != y.size())  // shortcut: different sizes are not ==
-            return false;
-        if (x.data() == y.data())  // shortcut: same size, same ptr: equal
-            return true;
-        for (size_t i = 0, e = x.size(); i != e; ++i)
-            if (x[i] != y[i])
-                return false;
-        return true;
-    }
-
-    friend bool operator!= (array_view_strided<T> x, array_view_strided<T> y) {
-        if (x.size() != y.size())  // shortcut: different sizes are !=
-            return true;
-        if (x.data() == y.data())  // shortcut: same size, same ptr: equal
-            return false;
-        for (size_t i = 0, e = x.size(); i != e; ++i)
-            if (x[i] == y[i])
-                return false;
-        return true;
-    }
+    constexpr T& front() const noexcept { return m_data[0]; }
+    constexpr T& back() const noexcept { return (*this)[size()-1]; }
+    constexpr pointer data() const noexcept { return m_data; }
 
 private:
-    T * m_data;
-    size_t m_len;
-    stride_t m_stride;
-
-    void init (T *data, size_t len, stride_t stride=AutoStride) {
-        m_data = data;
-        m_len = len;
-        m_stride = stride == AutoStride ? sizeof(T) : stride;
-    }
-    inline T* getptr (stride_t pos=0) const {
-        return (T*)((char *)m_data + pos*m_stride);
-    }
-    inline T& get (stride_t pos=0) const {
-        return *getptr(pos);
-    }
-
+    T *         m_data   = nullptr;
+    size_t      m_size   = 0;
+    stride_type m_stride = 1;
 };
 
 
 
-} OIIO_NAMESPACE_EXIT
+OIIO_NAMESPACE_END

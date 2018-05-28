@@ -133,18 +133,17 @@
 #include <string>
 #include <iostream>
 #include <cstring>
-#include "export.h"
-#include "strutil.h"
-#include "string_view.h"
-#include "dassert.h"
-#include "oiioversion.h"
+#include <OpenImageIO/export.h>
+#include <OpenImageIO/strutil.h>
+#include <OpenImageIO/string_view.h>
+#include <OpenImageIO/dassert.h>
+#include <OpenImageIO/oiioversion.h>
 
 #ifndef NULL
 #define NULL 0
 #endif
 
-OIIO_NAMESPACE_ENTER
-{
+OIIO_NAMESPACE_BEGIN
 
 class OIIO_API ustring {
 public:
@@ -522,6 +521,21 @@ public:
         return strcmp (c_str() ? c_str() : "", str.c_str());
     }
 
+    /// Return 0 if *this is lexicographically equal to str, -1 if
+    /// *this is lexicographically earlier than str, 1 if *this is
+    /// lexicographically after str.
+    int compare (string_view str) const {
+        return strncmp (c_str() ? c_str() : "",
+                        str.data() ? str.data() : "", str.length());
+    }
+
+    /// Return 0 if *this is lexicographically equal to str, -1 if
+    /// *this is lexicographically earlier than str, 1 if *this is
+    /// lexicographically after str.
+    int compare (const char *str) const {
+        return strcmp (c_str() ? c_str() : "", str ? str : "");
+    }
+
     /// Return 0 if a is lexicographically equal to b, -1 if a is
     /// lexicographically earlier than b, 1 if a is lexicographically
     /// after b.
@@ -549,9 +563,28 @@ public:
     /// x.
     bool operator== (const std::string &x) const { return compare(x) == 0; }
 
+    /// Test a ustring (*this) for lexicographic equality with string_view
+    /// x.
+    bool operator== (string_view x) const { return compare(x) == 0; }
+
+    /// Test a ustring (*this) for lexicographic equality with char* x.
+    bool operator== (const char *x) const { return compare(x) == 0; }
+
     /// Test for lexicographic equality between std::string a and ustring
     /// b.
     friend bool operator== (const std::string &a, const ustring &b) {
+        return b.compare(a) == 0;
+    }
+
+    /// Test for lexicographic equality between string_view a and ustring
+    /// b.
+    friend bool operator== (string_view a, const ustring &b) {
+        return b.compare(a) == 0;
+    }
+
+    /// Test for lexicographic equality between char* a and ustring
+    /// b.
+    friend bool operator== (const char *a, const ustring &b) {
         return b.compare(a) == 0;
     }
 
@@ -559,9 +592,29 @@ public:
     /// std::string x.
     bool operator!= (const std::string &x) const { return compare(x) != 0; }
 
+    /// Test a ustring (*this) for lexicographic inequality with
+    /// string_view x.
+    bool operator!= (string_view x) const { return compare(x) != 0; }
+
+    /// Test a ustring (*this) for lexicographic inequality with
+    /// char* x.
+    bool operator!= (const char *x) const { return compare(x) != 0; }
+
     /// Test for lexicographic inequality between std::string a and
     /// ustring b.
     friend bool operator!= (const std::string &a, const ustring &b) {
+        return b.compare(a) != 0;
+    }
+
+    /// Test for lexicographic inequality between string_view a and
+    /// ustring b.
+    friend bool operator!= (string_view a, const ustring &b) {
+        return b.compare(a) != 0;
+    }
+
+    /// Test for lexicographic inequality between char* a and
+    /// ustring b.
+    friend bool operator!= (const char *a, const ustring &b) {
         return b.compare(a) != 0;
     }
 
@@ -572,13 +625,14 @@ public:
     /// Construct a ustring in a printf-like fashion.  In other words,
     /// something like:
     ///    ustring s = ustring::format ("blah %d %g", (int)foo, (float)bar);
-    ///
-    /// The printf argument list is fully typesafe via tinyformat; format
-    /// conceptually has the signature
-    ///
-    /// static ustring format (const char *fmt, ...);
-    TINYFORMAT_WRAP_FORMAT (static ustring, format, /**/,
-        std::ostringstream msg;, msg, return ustring(msg.str());)
+    /// The argument list is fully typesafe.
+    /// The formatting of the string will always use the classic "C" locale
+    /// conventions (in particular, '.' as decimal separator for float values).
+    template<typename... Args>
+    static ustring format (string_view fmt, const Args&... args)
+    {
+        return ustring (Strutil::format (fmt, args...));
+    }
 
     /// Generic stream output of a ustring.
     ///
@@ -638,7 +692,7 @@ public:
         size_t length;       // Length of the string; must be right before cap
         size_t dummy_capacity;  // Dummy field! must be right before refcount
         int    dummy_refcount;  // Dummy field! must be right before chars
-        TableRep (string_view strref);
+        TableRep (string_view strref, size_t hash);
         ~TableRep ();
         const char *c_str () const { return (const char *)(this + 1); }
     };
@@ -673,13 +727,16 @@ public:
 /// the pointers themselves, which is safe because once allocated, a
 /// ustring's characters will never be moved. But beware, the resulting
 /// sorting order may vary from run to run!
-class ustringHashIsLess
+class ustringPtrIsLess
 {
 public:
     size_t operator() (ustring a, ustring b) const {
         return size_t(a.data()) < size_t(b.data());
     }
 };
+
+OIIO_DEPRECATED("Use ustringPtrIsLess [1.6]")
+typedef ustringPtrIsLess ustringHashIsLess;
 
 
 
@@ -696,7 +753,13 @@ inline bool iequals (const std::string &a, ustring b) {
 }
 
 
-}
-OIIO_NAMESPACE_EXIT
+
+// ustring variant stof from OpenImageIO/strutil.h
+namespace Strutil {
+inline int stof (ustring s) { return Strutil::stof (s.string()); }
+template<> inline std::string to_string (const ustring& value) { return value.string(); }
+} // end namespace Strutil
+
+OIIO_NAMESPACE_END
 
 #endif // OPENIMAGEIO_USTRING_H
