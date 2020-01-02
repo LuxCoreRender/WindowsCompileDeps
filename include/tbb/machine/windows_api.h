@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2016 Intel Corporation
+    Copyright (c) 2005-2018 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -23,17 +23,7 @@
 
 #if _WIN32 || _WIN64
 
-#if _XBOX
-
-#define NONET
-#define NOD3D
-#include <xtl.h>
-
-#else // Assume "usual" Windows
-
 #include <windows.h>
-
-#endif // _XBOX
 
 #if _WIN32_WINNT < 0x0600
 // The following Windows API function is declared explicitly;
