@@ -1,5 +1,5 @@
 // ======================================================================== //
-// Copyright 2009-2018 Intel Corporation                                    //
+// Copyright 2009-2020 Intel Corporation                                    //
 //                                                                          //
 // Licensed under the Apache License, Version 2.0 (the "License");          //
 // you may not use this file except in compliance with the License.         //
@@ -18,6 +18,7 @@
 #define __EMBREE_GEOMETRY_ISPH__
 
 #include "rtcore_buffer.isph"
+#include "rtcore_quaternion.isph"
 
 /* Opaque scene type */
 typedef uniform struct RTCSceneTy* uniform RTCScene;
@@ -47,6 +48,14 @@ enum RTCGeometryType
   RTC_GEOMETRY_TYPE_ROUND_HERMITE_CURVE = 40, // round (tube-like) Hermite curves
   RTC_GEOMETRY_TYPE_FLAT_HERMITE_CURVE  = 41, // flat (ribbon-like) Hermite curves
   RTC_GEOMETRY_TYPE_NORMAL_ORIENTED_HERMITE_CURVE  = 42, // flat normal-oriented Hermite curves
+
+  RTC_GEOMETRY_TYPE_SPHERE_POINT = 50,
+  RTC_GEOMETRY_TYPE_DISC_POINT = 51,
+  RTC_GEOMETRY_TYPE_ORIENTED_DISC_POINT = 52,
+
+  RTC_GEOMETRY_TYPE_ROUND_CATMULL_ROM_CURVE = 58, // round (tube-like) Catmull-Rom curves
+  RTC_GEOMETRY_TYPE_FLAT_CATMULL_ROM_CURVE  = 59, // flat (ribbon-like) Catmull-Rom curves
+  RTC_GEOMETRY_TYPE_NORMAL_ORIENTED_CATMULL_ROM_CURVE  = 60, // flat normal-oriented Catmull-Rom curves  
 
   RTC_GEOMETRY_TYPE_USER     = 120, // user-defined geometry
   RTC_GEOMETRY_TYPE_INSTANCE = 121  // scene instance
@@ -90,6 +99,7 @@ struct RTCIntersectFunctionNArguments
   uniform RTCIntersectContext* uniform context;
   RTCRayHitN* uniform rayhit;
   uniform unsigned int N;
+  uniform unsigned int geomID;
 };
 
 /* Intersection callback function */
@@ -104,6 +114,7 @@ struct RTCOccludedFunctionNArguments
   uniform RTCIntersectContext* uniform context;
   RTCRayN* uniform ray;
   uniform unsigned int N;
+  uniform unsigned int geomID;
 };
 
 /* Occlusion callback function */
@@ -150,9 +161,12 @@ RTC_API void rtcEnableGeometry(RTCGeometry geometry);
 RTC_API void rtcDisableGeometry(RTCGeometry geometry);
 
 
-/* Sets the number of time steps of the geometry. */
+/* Sets the number of motion blur time steps of the geometry. */
 RTC_API void rtcSetGeometryTimeStepCount(RTCGeometry geometry, uniform unsigned int timeStepCount);
 
+/* Sets the motion blur time range of the geometry. */
+RTC_API void rtcSetGeometryTimeRange(RTCGeometry geometry, uniform float startTime, uniform float endTime);
+ 
 /* Sets the number of vertex attributes of the geometry. */
 RTC_API void rtcSetGeometryVertexAttributeCount(RTCGeometry geometry, uniform unsigned int vertexAttributeCount);
 
@@ -191,6 +205,8 @@ RTC_API void rtcSetGeometryUserData(RTCGeometry geometry, void* uniform ptr);
 /* Gets the user-defined data pointer of the geometry. */
 RTC_API void* uniform rtcGetGeometryUserData(RTCGeometry geometry);
 
+/* Set the point query callback function of a geometry. */
+RTC_API void rtcSetGeometryPointQueryFunction(RTCGeometry geometry, RTCPointQueryFunction pointQuery);
 
 /* Sets the number of primitives of a user geometry. */
 RTC_API void rtcSetGeometryUserPrimitiveCount(RTCGeometry geometry, uniform unsigned int userPrimitiveCount);
@@ -216,6 +232,9 @@ RTC_API void rtcSetGeometryInstancedScene(RTCGeometry geometry, RTCScene scene);
 
 /* Sets the transformation of an instance for the specified time step. */
 RTC_API void rtcSetGeometryTransform(RTCGeometry geometry, uniform unsigned int timeStep, uniform RTCFormat format, const void* uniform xfm);
+
+/* Sets the transformation quaternion of an instance for the specified time step. */
+RTC_API void rtcSetGeometryTransformQuaternion(RTCGeometry geometry, uniform unsigned int timeStep, const uniform RTCQuaternionDecomposition* uniform qd);
 
 /* Returns the interpolated transformation of an instance for the specified time. */
 RTC_API void rtcGetGeometryTransform(RTCGeometry geometry, uniform float time, uniform RTCFormat format, void* uniform xfm);

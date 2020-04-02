@@ -98,21 +98,23 @@ typedef struct ImfRgba ImfRgba;
 
 #define IMF_INCREASING_Y	0
 #define IMF_DECREASING_Y	1
-#define IMF_RAMDOM_Y		2
+#define IMF_RANDOM_Y		2
 
 
 /*
 ** Compression types; values must be the same as in Imf::Compression.
 */
 
-#define IMF_NO_COMPRESSION	0
-#define IMF_RLE_COMPRESSION	1
-#define IMF_ZIPS_COMPRESSION	2
-#define IMF_ZIP_COMPRESSION	3
-#define IMF_PIZ_COMPRESSION	4
-#define IMF_PXR24_COMPRESSION	5
-#define IMF_B44_COMPRESSION	6
-#define IMF_B44A_COMPRESSION	7
+#define IMF_NO_COMPRESSION      0
+#define IMF_RLE_COMPRESSION     1
+#define IMF_ZIPS_COMPRESSION    2
+#define IMF_ZIP_COMPRESSION     3
+#define IMF_PIZ_COMPRESSION     4
+#define IMF_PXR24_COMPRESSION   5
+#define IMF_B44_COMPRESSION     6
+#define IMF_B44A_COMPRESSION    7
+#define IMF_DWAA_COMPRESSION    8
+#define IMF_DWAB_COMPRESSION    9
 
 
 /*

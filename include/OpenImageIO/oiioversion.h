@@ -36,7 +36,7 @@
 // Versioning of the OpenImageIO software
 #define OIIO_VERSION_MAJOR 1
 #define OIIO_VERSION_MINOR 8
-#define OIIO_VERSION_PATCH 11
+#define OIIO_VERSION_PATCH 13
 #define OIIO_VERSION_RELEASE_TYPE 
 
 #define OIIO_VERSION (10000 * OIIO_VERSION_MAJOR + \
