@@ -56,13 +56,13 @@
 
 
 // Establish the name spaces
-namespace OpenImageIO_v1_8 { }
-namespace OIIO = OpenImageIO_v1_8;
+namespace OpenImageIO_LuxCore_v1_8 { }
+namespace OIIO = OpenImageIO_LuxCore_v1_8;
 
 // Macros to use in each file to enter and exit the right name spaces.
-#define OIIO_NAMESPACE OpenImageIO_v1_8
-#define OIIO_NAMESPACE_STRING "OpenImageIO_v1_8"
-#define OIIO_NAMESPACE_BEGIN namespace OpenImageIO_v1_8 {
+#define OIIO_NAMESPACE OpenImageIO_LuxCore_v1_8
+#define OIIO_NAMESPACE_STRING "OpenImageIO_LuxCore_v1_8"
+#define OIIO_NAMESPACE_BEGIN namespace OpenImageIO_LuxCore_v1_8 {
 #define OIIO_NAMESPACE_END }
 #define OIIO_NAMESPACE_USING using namespace OIIO;
 
