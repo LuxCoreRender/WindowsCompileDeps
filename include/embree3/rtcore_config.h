@@ -1,28 +1,18 @@
-// ======================================================================== //
-// Copyright 2009-2020 Intel Corporation                                    //
-//                                                                          //
-// Licensed under the Apache License, Version 2.0 (the "License");          //
-// you may not use this file except in compliance with the License.         //
-// You may obtain a copy of the License at                                  //
-//                                                                          //
-//     http://www.apache.org/licenses/LICENSE-2.0                           //
-//                                                                          //
-// Unless required by applicable law or agreed to in writing, software      //
-// distributed under the License is distributed on an "AS IS" BASIS,        //
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. //
-// See the License for the specific language governing permissions and      //
-// limitations under the License.                                           //
-// ======================================================================== //
+// Copyright 2009-2021 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
 
 #pragma once
 
 #define RTC_VERSION_MAJOR 3
-#define RTC_VERSION_MINOR 8
-#define RTC_VERSION_PATCH 0
-#define RTC_VERSION 30800
-#define RTC_VERSION_STRING "3.8.0"
+#define RTC_VERSION_MINOR 12
+#define RTC_VERSION_PATCH 2
+#define RTC_VERSION 31202
+#define RTC_VERSION_STRING "3.12.2"
 
 #define RTC_MAX_INSTANCE_LEVEL_COUNT 1
+
+#define EMBREE_MIN_WIDTH 0
+#define RTC_MIN_WIDTH EMBREE_MIN_WIDTH
 
 /* #undef EMBREE_STATIC_LIB */
 /* #undef EMBREE_API_NAMESPACE */
@@ -31,13 +21,13 @@
 #  define RTC_NAMESPACE 
 #  define RTC_NAMESPACE_BEGIN namespace  {
 #  define RTC_NAMESPACE_END }
-#  define RTC_NAMESPACE_OPEN using namespace ;
+#  define RTC_NAMESPACE_USE using namespace ;
 #  define RTC_API_EXTERN_C
 #  undef EMBREE_API_NAMESPACE
 #else
 #  define RTC_NAMESPACE_BEGIN
 #  define RTC_NAMESPACE_END
-#  define RTC_NAMESPACE_OPEN
+#  define RTC_NAMESPACE_USE
 #  if defined(__cplusplus)
 #    define RTC_API_EXTERN_C extern "C"
 #  else
