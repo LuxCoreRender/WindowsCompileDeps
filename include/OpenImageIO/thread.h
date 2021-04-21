@@ -1,33 +1,8 @@
-/*
-  Copyright 2008 Larry Gritz and the other authors and contributors.
-  All Rights Reserved.
+// Copyright 2008-present Contributors to the OpenImageIO project.
+// SPDX-License-Identifier: BSD-3-Clause
+// https://github.com/OpenImageIO/oiio/blob/master/LICENSE.md
 
-  Redistribution and use in source and binary forms, with or without
-  modification, are permitted provided that the following conditions are
-  met:
-  * Redistributions of source code must retain the above copyright
-    notice, this list of conditions and the following disclaimer.
-  * Redistributions in binary form must reproduce the above copyright
-    notice, this list of conditions and the following disclaimer in the
-    documentation and/or other materials provided with the distribution.
-  * Neither the name of the software's owners nor the names of its
-    contributors may be used to endorse or promote products derived from
-    this software without specific prior written permission.
-  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-  "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-  LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-  A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-  OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-  SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-  LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-  DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-  THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
-  (This is the Modified BSD License)
-*/
-
+// clang-format off
 
 /////////////////////////////////////////////////////////////////////////
 /// @file   thread.h
@@ -36,25 +11,24 @@
 /////////////////////////////////////////////////////////////////////////
 
 
-#ifndef OPENIMAGEIO_THREAD_H
-#define OPENIMAGEIO_THREAD_H
+#pragma once
 
 #include <algorithm>
 #include <atomic>
-#include <future>
+#include <chrono>
 #include <functional>
+#include <future>
+#include <iostream>
 #include <memory>
 #include <mutex>
 #include <thread>
 #include <vector>
-#include <chrono>
-#include <iostream>
 
-#include <OpenImageIO/oiioversion.h>
-#include <OpenImageIO/export.h>
-#include <OpenImageIO/platform.h>
 #include <OpenImageIO/atomic.h>
 #include <OpenImageIO/dassert.h>
+#include <OpenImageIO/export.h>
+#include <OpenImageIO/oiioversion.h>
+#include <OpenImageIO/platform.h>
 
 
 
@@ -65,7 +39,7 @@
 // it off. Also set to 0 if you don't believe that we are correct in
 // allowing this construct on all platforms.
 #ifndef OIIO_THREAD_ALLOW_DCLP
-#define OIIO_THREAD_ALLOW_DCLP 1
+#    define OIIO_THREAD_ALLOW_DCLP 1
 #endif
 
 
@@ -87,46 +61,43 @@ OIIO_NAMESPACE_BEGIN
 /// overhead is associated with a particular mutex.
 class null_mutex {
 public:
-    null_mutex () { }
-    ~null_mutex () { }
-    void lock () { }
-    void unlock () { }
-    void lock_shared () { }
-    void unlock_shared () { }
-    bool try_lock () { return true; }
+    null_mutex() noexcept {}
+    ~null_mutex() noexcept {}
+    void lock() noexcept {}
+    void unlock() noexcept {}
+    void lock_shared() noexcept {}
+    void unlock_shared() noexcept {}
+    bool try_lock() noexcept { return true; }
 };
 
 /// Null lock that can be substituted for a real one to test how much
 /// overhead is associated with a particular lock.
-template<typename T>
-class null_lock {
+template<typename T> class null_lock {
 public:
-    null_lock (T &m) { }
+    null_lock(T& /*m*/) noexcept {}
 };
 
 
 
 using std::mutex;
-using std::thread;
 using std::recursive_mutex;
-typedef std::lock_guard< mutex > lock_guard;
-typedef std::lock_guard< recursive_mutex > recursive_lock_guard;
-
-
+using std::thread;
+typedef std::lock_guard<mutex> lock_guard;
+typedef std::lock_guard<recursive_mutex> recursive_lock_guard;
 
 
 
 /// Yield the processor for the rest of the timeslice.
 ///
 inline void
-yield ()
+yield() noexcept
 {
 #if defined(__GNUC__)
-    sched_yield ();
+    sched_yield();
 #elif defined(_MSC_VER)
-    SwitchToThread ();
+    SwitchToThread();
 #else
-#   error No yield on this platform.
+#    error No yield on this platform.
 #endif
 }
 
@@ -134,7 +105,7 @@ yield ()
 
 // Slight pause
 inline void
-pause (int delay)
+pause(int delay) noexcept
 {
 #if defined(__GNUC__) && (defined(__x86_64__) || defined(__i386__))
     for (int i = 0; i < delay; ++i)
@@ -146,16 +117,17 @@ pause (int delay)
 
 #elif defined(_MSC_VER)
     for (int i = 0; i < delay; ++i) {
-#if defined (_WIN64)
+#    if defined(_WIN64)
         YieldProcessor();
-#else
-        _asm  pause
-#endif /* _WIN64 */
+#    else
+        _asm pause
+#    endif /* _WIN64 */
     }
 
 #else
     // No pause on this platform, just punt
-    for (int i = 0; i < delay; ++i) ;
+    for (int i = 0; i < delay; ++i)
+        ;
 #endif
 }
 
@@ -164,11 +136,16 @@ pause (int delay)
 // Helper class to deliver ever longer pauses until we yield our timeslice.
 class atomic_backoff {
 public:
-    atomic_backoff () : m_count(1) { }
+    atomic_backoff(int pausemax = 16) noexcept
+        : m_count(1)
+        , m_pausemax(pausemax)
+    {
+    }
 
-    void operator() () {
-        if (m_count <= 16) {
-            pause (m_count);
+    void operator()() noexcept
+    {
+        if (m_count <= m_pausemax) {
+            pause(m_count);
             m_count *= 2;
         } else {
             yield();
@@ -177,6 +154,7 @@ public:
 
 private:
     int m_count;
+    int m_pausemax;
 };
 
 
@@ -204,20 +182,21 @@ private:
 ///
 class spin_mutex {
 public:
-    spin_mutex (void) { }
-    ~spin_mutex (void) { }
+    spin_mutex(void) noexcept {}
+    ~spin_mutex(void) noexcept {}
 
     /// Copy constructor -- initialize to unlocked.
     ///
-    spin_mutex (const spin_mutex &) { }
+    spin_mutex(const spin_mutex&) noexcept {}
 
     /// Assignment does not do anything, since lockedness should not
     /// transfer.
-    const spin_mutex& operator= (const spin_mutex&) { return *this; }
+    const spin_mutex& operator=(const spin_mutex&) noexcept { return *this; }
 
     /// Acquire the lock, spin until we have it.
     ///
-    void lock () {
+    void lock() noexcept
+    {
         // To avoid spinning too tightly, we use the atomic_backoff to
         // provide increasingly longer pauses, and if the lock is under
         // lots of contention, eventually yield the timeslice.
@@ -226,7 +205,7 @@ public:
         // Try to get ownership of the lock. Though experimentation, we
         // found that OIIO_UNLIKELY makes this just a bit faster on gcc
         // x86/x86_64 systems.
-        while (! OIIO_UNLIKELY(try_lock())) {
+        while (!OIIO_UNLIKELY(try_lock())) {
 #if OIIO_THREAD_ALLOW_DCLP
             // The full try_lock() involves a test_and_set, which
             // writes memory, and that will lock the bus.  But a normal
@@ -242,7 +221,7 @@ public:
             // give a way to use tsan for other checks.
             do {
                 backoff();
-            } while (*(volatile bool *)&m_locked);
+            } while (*(volatile bool*)&m_locked);
 #else
             backoff();
 #endif
@@ -251,38 +230,49 @@ public:
 
     /// Release the lock that we hold.
     ///
-    void unlock () {
+    void unlock() noexcept
+    {
         // Fastest way to do it is with a clear with "release" semantics
-        m_locked.clear (std::memory_order_release);
+        m_locked.clear(std::memory_order_release);
     }
 
     /// Try to acquire the lock.  Return true if we have it, false if
     /// somebody else is holding the lock.
-    bool try_lock () {
-        return ! m_locked.test_and_set (std::memory_order_acquire);
+    bool try_lock() noexcept
+    {
+        return !m_locked.test_and_set(std::memory_order_acquire);
     }
 
     /// Helper class: scoped lock for a spin_mutex -- grabs the lock upon
     /// construction, releases the lock when it exits scope.
     class lock_guard {
     public:
-        lock_guard (spin_mutex &fm) : m_fm(fm) { m_fm.lock(); }
-        ~lock_guard () { m_fm.unlock(); }
+        lock_guard(spin_mutex& fm) noexcept
+            : m_fm(fm)
+        {
+            m_fm.lock();
+        }
+        ~lock_guard() noexcept { m_fm.unlock(); }
+
     private:
         lock_guard() = delete;
         lock_guard(const lock_guard& other) = delete;
-        lock_guard& operator= (const lock_guard& other) = delete;
-        spin_mutex & m_fm;
+        lock_guard& operator=(const lock_guard& other) = delete;
+        spin_mutex& m_fm;
     };
 
 private:
-    std::atomic_flag m_locked = ATOMIC_FLAG_INIT; // initialize to unlocked
+    std::atomic_flag m_locked = ATOMIC_FLAG_INIT;  // initialize to unlocked
 };
 
 
 typedef spin_mutex::lock_guard spin_lock;
 
 
+
+#if 0
+
+// OLD CODE vvvvvvvv
 
 
 /// Spinning reader/writer mutex.  This is just like spin_mutex, except
@@ -395,6 +385,131 @@ private:
 };
 
 
+#else
+
+// vvv New spin rw lock Oct 2017
+
+/// Spinning reader/writer mutex.  This is just like spin_mutex, except
+/// that there are separate locking mechanisms for "writers" (exclusive
+/// holders of the lock, presumably because they are modifying whatever
+/// the lock is protecting) and "readers" (non-exclusive, non-modifying
+/// tasks that may access the protectee simultaneously).
+class spin_rw_mutex {
+public:
+    /// Default constructor -- initialize to unlocked.
+    ///
+    spin_rw_mutex() noexcept {}
+
+    ~spin_rw_mutex() noexcept {}
+
+    // Do not allow copy or assignment.
+    spin_rw_mutex(const spin_rw_mutex&) = delete;
+    const spin_rw_mutex& operator=(const spin_rw_mutex&) = delete;
+
+    /// Acquire the reader lock.
+    ///
+    void read_lock() noexcept
+    {
+        // first increase the readers, and if it turned out nobody was
+        // writing, we're done. This means that acquiring a read when nobody
+        // is writing is a single atomic operation.
+        int oldval = m_bits.fetch_add(1, std::memory_order_acquire);
+        if (!(oldval & WRITER))
+            return;
+        // Oops, we incremented readers but somebody was writing. Backtrack
+        // by subtracting, and do things the hard way.
+        int expected = (--m_bits) & NOTWRITER;
+
+        // Do compare-and-exchange until we can increase the number of
+        // readers by one and have no writers.
+        if (m_bits.compare_exchange_weak(expected, expected + 1,
+                                         std::memory_order_acquire))
+            return;
+        atomic_backoff backoff;
+        do {
+            backoff();
+            expected = m_bits.load() & NOTWRITER;
+        } while (!m_bits.compare_exchange_weak(expected, expected + 1,
+                                               std::memory_order_acquire));
+    }
+
+    /// Release the reader lock.
+    ///
+    void read_unlock() noexcept
+    {
+        // Atomically reduce the number of readers.  It's at least 1,
+        // and the WRITER bit should definitely not be set, so this just
+        // boils down to an atomic decrement of m_bits.
+        m_bits.fetch_sub(1, std::memory_order_release);
+    }
+
+    /// Acquire the writer lock.
+    ///
+    void write_lock() noexcept
+    {
+        // Do compare-and-exchange until we have just ourselves as writer
+        int expected = 0;
+        if (m_bits.compare_exchange_weak(expected, WRITER,
+                                         std::memory_order_acquire))
+            return;
+        atomic_backoff backoff;
+        do {
+            backoff();
+            expected = 0;
+        } while (!m_bits.compare_exchange_weak(expected, WRITER,
+                                               std::memory_order_acquire));
+    }
+
+    /// Release the writer lock.
+    ///
+    void write_unlock() noexcept
+    {
+        // Remove the writer bit
+        m_bits.fetch_sub(WRITER, std::memory_order_release);
+    }
+
+    /// lock() is a synonym for exclusive (write) lock.
+    void lock() { write_lock(); }
+
+    /// unlock() is a synonym for exclusive (write) unlock.
+    void unlock() { write_unlock(); }
+
+    /// Helper class: scoped read lock for a spin_rw_mutex -- grabs the
+    /// read lock upon construction, releases the lock when it exits scope.
+    class read_lock_guard {
+    public:
+        read_lock_guard (spin_rw_mutex &fm) noexcept : m_fm(fm) { m_fm.read_lock(); }
+        ~read_lock_guard () noexcept { m_fm.read_unlock(); }
+    private:
+        read_lock_guard(const read_lock_guard& other) = delete;
+        read_lock_guard& operator = (const read_lock_guard& other) = delete;
+        spin_rw_mutex & m_fm;
+    };
+
+    /// Helper class: scoped write lock for a spin_rw_mutex -- grabs the
+    /// read lock upon construction, releases the lock when it exits scope.
+    class write_lock_guard {
+    public:
+        write_lock_guard (spin_rw_mutex &fm) noexcept : m_fm(fm) { m_fm.write_lock(); }
+        ~write_lock_guard () noexcept { m_fm.write_unlock(); }
+    private:
+        write_lock_guard(const write_lock_guard& other) = delete;
+        write_lock_guard& operator = (const write_lock_guard& other) = delete;
+        spin_rw_mutex & m_fm;
+    };
+
+private:
+    // Use one word to hold the reader count, with a high bit indicating
+    // that it's locked for writing.  This will only work if we have
+    // fewer than 2^30 simultaneous readers.  I think that should hold
+    // us for some time.
+    enum { WRITER = 1<<30, NOTWRITER = WRITER-1 };
+    std::atomic<int> m_bits { 0 };
+};
+
+#endif
+
+
 typedef spin_rw_mutex::read_lock_guard spin_rw_read_lock;
 typedef spin_rw_mutex::write_lock_guard spin_rw_write_lock;
 
@@ -412,14 +527,12 @@ typedef spin_rw_mutex::write_lock_guard spin_rw_write_lock;
 /// that they don't exhibit false sharing. Try to choose Bins larger than
 /// the expected number of threads that will be simultaneously locking
 /// mutexes.
-template<class Mutex, class Key, class Hash, size_t Bins=16>
-class mutex_pool
-{
+template<class Mutex, class Key, class Hash, size_t Bins = 16>
+class mutex_pool {
 public:
-    mutex_pool () { }
-    Mutex& operator[] (const Key &key) {
-        return m_mutex[m_hash(key) % Bins].m;
-    }
+    mutex_pool() noexcept {}
+    Mutex& operator[](const Key& key) noexcept { return m_mutex[m_hash(key) % Bins].m; }
+
 private:
     // Helper type -- force cache line alignment. This should make an array
     // of these also have padding so that each individual mutex is aligned
@@ -438,34 +551,39 @@ private:
 /// then wait for them to all complete.
 class thread_group {
 public:
-    thread_group () {}
-    ~thread_group () { join_all(); }
+    thread_group() {}
+    ~thread_group() { join_all(); }
 
-    void add_thread (thread *t) {
+    void add_thread(thread* t)
+    {
         if (t) {
-            lock_guard lock (m_mutex);
-            m_threads.emplace_back (t);
+            lock_guard lock(m_mutex);
+            m_threads.emplace_back(t);
         }
     }
 
     template<typename FUNC, typename... Args>
-    thread *create_thread (FUNC func, Args&&... args) {
-        thread *t = new thread (func, std::forward<Args>(args)...);
-        add_thread (t);
+    thread* create_thread(FUNC func, Args&&... args)
+    {
+        thread* t = new thread(func, std::forward<Args>(args)...);
+        add_thread(t);
         return t;
     }
 
-    void join_all () {
-        lock_guard lock (m_mutex);
-        for (auto &t : m_threads)
+    void join_all()
+    {
+        lock_guard lock(m_mutex);
+        for (auto& t : m_threads)
             if (t->joinable())
                 t->join();
     }
 
-    size_t size () const {
-        lock_guard lock (m_mutex);
+    size_t size() const
+    {
+        lock_guard lock(m_mutex);
         return m_threads.size();
     }
+
 private:
     mutable mutex m_mutex;
     std::vector<std::unique_ptr<thread>> m_threads;
@@ -489,17 +607,23 @@ private:
 ///
 /// Submitting an asynchronous task to the queue follows the following
 /// pattern:
-///    /* func that takes a thread ID followed possibly by more args */
-///    result_t my_func (int thread_id, Arg1 arg1, ...) { }
-///    pool->push (my_func, arg1, ...);
+///
+///     /* func that takes a thread ID followed possibly by more args */
+///     result_t my_func (int thread_id, Arg1 arg1, ...) { }
+///     pool->push (my_func, arg1, ...);
 ///
 /// If you just want to "fire and forget", then:
-///    pool->push (func, ...args...);
+///
+///     pool->push (func, ...args...);
+///
 /// But if you need a result, or simply need to know when the task has
 /// completed, note that the push() method will return a future<result_t>
 /// that you can check, like this:
+///
 ///     std::future<result_t> f = pool->push (my_task);
+///
 /// And then you can
+///
 ///     find out if it's done:              if (f.valid()) ...
 ///     wait for it to get done:            f.wait();
 ///     get result (waiting if necessary):  result_t r = f.get();
@@ -507,10 +631,12 @@ private:
 /// A common idiom is to fire a bunch of sub-tasks at the queue, and then
 /// wait for them to all complete. We provide a helper class, task_set,
 /// to make this easy:
-///     task_set<decltype(myfunc())> tasks (pool);
+///
+///     task_set tasks (pool);
 ///     for (int i = 0; i < n_subtasks; ++i)
 ///         tasks.push (pool->push (myfunc));
 ///     tasks.wait ();
+///
 /// Note that the tasks.wait() is optional -- it will be called
 /// automatically when the task_set exits its scope.
 ///
@@ -526,11 +652,11 @@ public:
     /// Initialize the pool.  This implicitly calls resize() to set the
     /// number of worker threads, defaulting to a number of workers that is
     /// one less than the number of hardware cores.
-    thread_pool (int nthreads = -1);
-    ~thread_pool ();
+    thread_pool(int nthreads = -1);
+    ~thread_pool();
 
     /// How many threads are in the pool?
-    int size () const;
+    int size() const;
 
     /// Sets the number of worker threads in the pool. If the pool size is
     /// 0, any tasks added to the pool will be executed immediately by the
@@ -538,27 +664,27 @@ public:
     /// the number of hardware cores minus one (one less, to account for the
     /// fact that the calling thread will also contribute). BEWARE! Resizing
     /// the queue should not be done while jobs are running.
-    void resize (int nthreads = -1);
+    void resize(int nthreads = -1);
 
     /// Return the number of currently idle threads in the queue. Zero
     /// means the queue is fully engaged.
-    int idle () const;
+    int idle() const;
 
     /// Run the user's function that accepts argument int - id of the
     /// running thread. The returned value is templatized std::future, where
     /// the user can get the result and rethrow any exceptions. If the queue
     /// has no worker threads, the task will be run immediately by the
     /// calling thread.
-    template<typename F>
-    auto push (F && f) ->std::future<decltype(f(0))> {
-        auto pck = std::make_shared<std::packaged_task<decltype(f(0))(int)>>(std::forward<F>(f));
+    template<typename F> auto push(F&& f) -> std::future<decltype(f(0))>
+    {
+        auto pck = std::make_shared<std::packaged_task<decltype(f(0))(int)>>(
+            std::forward<F>(f));
         if (size() < 1) {
-            (*pck)(-1); // No worker threads, run it with the calling thread
+            (*pck)(-1);  // No worker threads, run it with the calling thread
         } else {
-            auto _f = new std::function<void(int id)>([pck](int id) {
-                (*pck)(id);
-            });
-            push_queue_and_notify (_f);
+            auto _f = new std::function<void(int id)>(
+                [pck](int id) { (*pck)(id); });
+            push_queue_and_notify(_f);
         }
         return pck->get_future();
     }
@@ -588,27 +714,54 @@ public:
     /// this calling thread) and return true. Otherwise (there are no
     /// pending jobs), return false immediately. This utility is what makes
     /// it possible for non-pool threads to also run tasks from the queue
-    /// when they would ordinarily be idle.
-    bool run_one_task ();
+    /// when they would ordinarily be idle. The thread id of the caller
+    /// should be passed.
+    bool run_one_task(std::thread::id id);
 
     /// Return true if the calling thread is part of the thread pool. This
-    /// can be used to limit a pool thread from inadvisedly adding its own
+    /// can be used to limit a pool thread from unadvisedly adding its own
     /// subtasks to clog up the pool.
-    bool this_thread_is_in_pool () const;
+    /// DEPRECATED(2.1) -- use is_worker() instead.
+    bool this_thread_is_in_pool() const;
+
+    /// Register a thread (not already in the thread pool itself) as working
+    /// on tasks in the pool. This is used to avoid recursion.
+    void register_worker(std::thread::id id);
+    /// De-register a thread, saying it is no longer in the process of
+    /// taking work from the thread pool.
+    void deregister_worker(std::thread::id id);
+    /// Is the thread in the pool or currently engaged in taking tasks from
+    /// the pool?
+    bool is_worker(std::thread::id id) const;
+    bool is_worker() const { return is_worker(std::this_thread::get_id()); }
+    // Non-const versions: DEPRECATED(2.1)
+    bool is_worker(std::thread::id id);
+
+    /// How many jobs are waiting to run?  (Use with caution! Can be out of
+    /// date by the time you look at it.)
+    size_t jobs_in_queue() const;
+
+    /// Is the pool very busy? Meaning that there are significantly more
+    /// tasks in the queue waiting to run than there are threads in the
+    /// pool. It may be wise for a caller to check this before submitting
+    /// tasks -- if the queue is very busy, it's probably more expedient to
+    /// execute the code directly rather than add it to an oversubscribed
+    /// queue.
+    bool very_busy() const;
 
 private:
     // Disallow copy construction and assignment
-    thread_pool (const thread_pool&) = delete;
-    thread_pool (thread_pool &&) = delete;
-    thread_pool& operator= (const thread_pool &) = delete;
-    thread_pool& operator= (thread_pool &&) = delete;
+    thread_pool(const thread_pool&) = delete;
+    thread_pool(thread_pool&&) = delete;
+    thread_pool& operator=(const thread_pool&) = delete;
+    thread_pool& operator=(thread_pool&&) = delete;
 
     // PIMPL pattern hides all the guts far away from the public API
     class Impl;
     std::unique_ptr<Impl> m_impl;
 
     // Utility function that helps us hide the implementation
-    void push_queue_and_notify (std::function<void(int id)> *f);
+    void push_queue_and_notify(std::function<void(int id)>* f);
 };
 
 
@@ -621,7 +774,7 @@ OIIO_API thread_pool* default_thread_pool ();
 
 
 
-/// task_set<T> is a group of future<T>'s from a thread_queue that you can
+/// task_set is a group of future<void>'s from a thread_queue that you can
 /// add to, and when you either call wait() or just leave the task_set's
 /// scope, it will wait for all the tasks in the set to be done before
 /// proceeding.
@@ -632,7 +785,7 @@ OIIO_API thread_pool* default_thread_pool ();
 ///
 ///    thread_pool* pool (default_thread_pool());
 ///    {
-///        task_set<decltype(myfunc())> tasks (pool);
+///        task_set tasks (pool);
 ///        // Launch a bunch of tasks into the thread pool
 ///        for (int i = 0; i < ntasks; ++i)
 ///            tasks.push (pool->push (myfunc));
@@ -640,51 +793,59 @@ OIIO_API thread_pool* default_thread_pool ();
 ///        // wait for all those queue tasks to finish.
 ///    }
 ///
-template<typename T=void>
-class task_set {
+class OIIO_API task_set {
 public:
-    task_set (thread_pool *pool) { m_pool = pool; }
-    ~task_set () { wait(); }
-    void push (std::future<T> &&f) { m_futures.emplace_back (std::move(f)); }
-    void wait (bool block = false) {
-        const std::chrono::milliseconds wait_time (0);
-        if (block == false) {
-            int tries = 0;
-            while (1) {
-                bool all_finished = true;
-                for (auto&& f : m_futures) {
-                    // Asking future.wait_for for 0 time just checks the status.
-                    auto status = f.wait_for (wait_time);
-                    if (status != std::future_status::ready)
-                        all_finished = false;
-                }
-                if (all_finished)   // All futures are ready? We're done.
-                    break;
-                // We're still waiting on some tasks to complete. What next?
-                if (++tries < 4)    // First few times,
-                    continue;       //   just busy-wait, check status again
-                // Since we're waiting, try to run a task ourselves to help
-                // with the load. If none is available, just yield schedule.
-                if (! m_pool->run_one_task())
-                    yield();
-            }
-        } else {
-            // If block is true, just block on completion of all the tasks
-            // and don't try to do any of the work with the calling thread.
-            for (auto&& f : m_futures)
-                f.wait ();
-        }
-#ifndef NDEBUG
-        for (auto&& f : m_futures)
-            ASSERT (f.wait_for(wait_time) == std::future_status::ready);
-#endif
+    task_set(thread_pool* pool = nullptr)
+        : m_pool(pool ? pool : default_thread_pool())
+        , m_submitter_thread(std::this_thread::get_id())
+    {
     }
+    ~task_set() { wait(); }
+
+    task_set(const task_set&) = delete;
+    const task_set& operator=(const task_set&) = delete;
+
+    // Return the thread id of the thread that set up this task_set and
+    // submitted its tasks to the thread pool.
+    std::thread::id submitter() const { return m_submitter_thread; }
+
+    // Save a future (presumably returned by a threadpool::push() as part
+    // of this task set.
+    void push(std::future<void>&& f)
+    {
+        OIIO_DASSERT(
+            std::this_thread::get_id() == submitter()
+            && "All tasks in a tast_set should be added by the same thread");
+        m_futures.emplace_back(std::move(f));
+    }
+
+    // Wait for the given taskindex (0..n-1, where n is the number of tasks
+    // submitted as part of this task_set). If block == true, fully block
+    // while waiting for that task to finish. If block is false, then busy
+    // wait, and opportunistically run queue tasks yourself while you are
+    // waiting for the task to finish.
+    void wait_for_task(size_t taskindex, bool block = false);
+
+    // Wait for all tasks in the set to finish. If block == true, fully
+    // block while waiting for the pool threads to all finish. If block is
+    // false, then busy wait, and opportunistically run queue tasks yourself
+    // while you are waiting for other tasks to finish.
+    void wait(bool block = false);
+
+    // Debugging sanity check, called after wait(), to ensure that all the
+    // tasks were completed.
+    void check_done()
+    {
+        const std::chrono::milliseconds wait_time(0);
+        for (auto&& f : m_futures)
+            OIIO_ASSERT(f.wait_for(wait_time) == std::future_status::ready);
+    }
+
 private:
-    thread_pool *m_pool;
-    std::vector<std::future<T>> m_futures;
+    thread_pool* m_pool;
+    std::thread::id m_submitter_thread;
+    std::vector<std::future<void>> m_futures;
 };
 
 
 OIIO_NAMESPACE_END
-
-#endif // OPENIMAGEIO_THREAD_H

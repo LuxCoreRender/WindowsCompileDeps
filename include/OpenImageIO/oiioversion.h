@@ -1,47 +1,75 @@
-/*
-  Copyright 2008 Larry Gritz and the other authors and contributors.
-  All Rights Reserved.
-
-  Redistribution and use in source and binary forms, with or without
-  modification, are permitted provided that the following conditions are
-  met:
-  * Redistributions of source code must retain the above copyright
-    notice, this list of conditions and the following disclaimer.
-  * Redistributions in binary form must reproduce the above copyright
-    notice, this list of conditions and the following disclaimer in the
-    documentation and/or other materials provided with the distribution.
-  * Neither the name of the software's owners nor the names of its
-    contributors may be used to endorse or promote products derived from
-    this software without specific prior written permission.
-  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-  "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-  LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-  A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-  OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-  SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-  LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-  DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-  THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
-  (This is the Modified BSD License)
-*/
+// Copyright 2008-present Contributors to the OpenImageIO project.
+// SPDX-License-Identifier: BSD-3-Clause
+// https://github.com/OpenImageIO/oiio/blob/master/LICENSE.md
 
 
 #ifndef OPENIMAGEIO_VERSION_H
 #define OPENIMAGEIO_VERSION_H
 
 
-// Versioning of the OpenImageIO software
-#define OIIO_VERSION_MAJOR 1
-#define OIIO_VERSION_MINOR 8
+// Versioning of the OpenImageIO software. For *releases*:
+//
+// MAJOR is a major architectural change or a step that does not preserve
+// backwards compatibility of source code (an app designed for an older
+// major version may not compile successfully against newer version of the
+// headers and libraries, and will need to have its source modified).
+// Examples of changes that necessitate major version changes are removal of
+// API calls or classes, or renaming of class members.
+//
+// MINOR is an addition of significant new features and may change the
+// definition of public data structures or functions in a way that is
+// backwards compatible for source code, but is not back compatible for ABI
+// or linkage (i.e. you don't need to modify your app's source, but you do
+// need to recompile it). Examples of changes that necessitate a minor
+// version change would be adding new data fields to a structure, adding new
+// virtual member functions to a class, or adding new optional parameters to
+// the end of a function call.
+//
+// PATCH is a minor change that preserves ABI and link back-compatibility,
+// where an app built for the older version can simply have the newer
+// library substituted without recompilation. Generally, this is only for
+// bug fixes, though sometimes we may add new minor features if they only
+// involve addition of static/global function calls or data (since this does
+// not break back-compatibility).
+//
+// TWEAK is just a rebuild/re-version that is both forward and backward
+// compatible. Usually this involves only a change to the build system
+// itself (such as fixing a build break on a particular platform), a change
+// in documentation, or fixing some other minor unintentional flaw in a
+// prior release.
+//
+// Note that these designations only apply to released branches. Changes
+// in the main development branch ("master") do not make any compatibility
+// guarantees at all.
+//
+#define OIIO_VERSION_MAJOR 2
+#define OIIO_VERSION_MINOR 2
 #define OIIO_VERSION_PATCH 13
+#define OIIO_VERSION_TWEAK 1
 #define OIIO_VERSION_RELEASE_TYPE 
 
-#define OIIO_VERSION (10000 * OIIO_VERSION_MAJOR + \
-                        100 * OIIO_VERSION_MINOR + \
-                              OIIO_VERSION_PATCH)
+// Construct a single integer version number from major, minor, patch.
+// Example of its use:
+//
+//     #if OIIO_VERSION >= OIIO_MAKE_VERSION(2,3,0)
+//         ... use a feature introduced in version 2.3.0 ...
+//     #endif
+//
+#define OIIO_MAKE_VERSION(major,minor,patch) \
+                        (10000 * (major) + 100 * (minor) + (patch))
+
+// Single version designation of this release
+#define OIIO_VERSION OIIO_MAKE_VERSION(OIIO_VERSION_MAJOR, \
+                        OIIO_VERSION_MINOR, OIIO_VERSION_PATCH)
+
+// Test if OIIO is >= a particular version.
+#define OIIO_VERSION_GREATER_EQUAL(major,minor,patch) \
+                        OIIO_VERSION >= OIIO_MAKE_VERSION(major,minor,patch)
+
+// Test if OIIO is < a particular version.
+#define OIIO_VERSION_LESS(major,minor,patch) \
+                        OIIO_VERSION < OIIO_MAKE_VERSION(major,minor,patch)
+
 // We also define the old name for backwards compatibility purposes.
 #define OPENIMAGEIO_VERSION OIIO_VERSION
 
@@ -56,13 +84,13 @@
 
 
 // Establish the name spaces
-namespace OpenImageIO_LuxCore_v1_8 { }
-namespace OIIO = OpenImageIO_LuxCore_v1_8;
+namespace OpenImageIO_v2_2 { }
+namespace OIIO = OpenImageIO_v2_2;
 
 // Macros to use in each file to enter and exit the right name spaces.
-#define OIIO_NAMESPACE OpenImageIO_LuxCore_v1_8
-#define OIIO_NAMESPACE_STRING "OpenImageIO_LuxCore_v1_8"
-#define OIIO_NAMESPACE_BEGIN namespace OpenImageIO_LuxCore_v1_8 {
+#define OIIO_NAMESPACE OpenImageIO_v2_2
+#define OIIO_NAMESPACE_STRING "OpenImageIO_v2_2"
+#define OIIO_NAMESPACE_BEGIN namespace OpenImageIO_v2_2 {
 #define OIIO_NAMESPACE_END }
 #define OIIO_NAMESPACE_USING using namespace OIIO;
 
@@ -94,8 +122,17 @@ namespace OIIO = OpenImageIO_LuxCore_v1_8;
 /// Version 18 changed to add an m_threads member to ImageInput/Output.
 /// Version 19 changed the definition of DeepData.
 /// Version 20 added FMT_imageio_library_version() to plugins. (OIIO 1.7)
+/// Version 21 changed the signatures of ImageInput methods: added
+///     subimage,miplevel params to many read_*() methods; changed thread
+///     safety expectations; removed newspec param from seek_subimage;
+///     added spec(subimage,miplevel) and spec_dimensions(subimage,miplevel).
+///     (OIIO 2.0)
+/// Version 22 changed the signatures of ImageInput/ImageOutput create()
+///     to return unique_ptr. (OIIO 2.0)
+/// Version 23 added set_ioproxy() methods to ImageInput & ImageOutput
+///     (OIIO 2.2).
 
-#define OIIO_PLUGIN_VERSION 20
+#define OIIO_PLUGIN_VERSION 23
 
 #define OIIO_PLUGIN_NAMESPACE_BEGIN OIIO_NAMESPACE_BEGIN
 #define OIIO_PLUGIN_NAMESPACE_END OIIO_NAMESPACE_END
@@ -108,11 +145,14 @@ namespace OIIO = OpenImageIO_LuxCore_v1_8;
 #define OIIO_PLUGIN_EXPORTS_END }
 #endif
 
-#define OIIO_BUILD_CPP11 1 /* Always build for C++ >= 11 */
-// OIIO_BUILD_CPP14 will be 1 if this OIIO was built using C++14
-#define OIIO_BUILD_CPP14 0
-// OIIO_BUILD_CPP17 will be 1 if this OIIO was built using C++17
-#define OIIO_BUILD_CPP17 0
+// Which CPP standard (11, 14, etc.) was this copy of OIIO *built* with?
+#define OIIO_BUILD_CPP 11
+
+// DEPRECATED(2.1): old macros separately giving compatibility.
+#define OIIO_BUILD_CPP11 (11 >= 11)
+#define OIIO_BUILD_CPP14 (11 >= 14)
+#define OIIO_BUILD_CPP17 (11 >= 17)
+#define OIIO_BUILD_CPP20 (11 >= 20)
 
 #endif
 
