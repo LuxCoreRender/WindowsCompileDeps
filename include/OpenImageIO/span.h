@@ -1,7 +1,6 @@
-// Copyright 2008-present Contributors to the OpenImageIO project.
-//  https://github.com/OpenImageIO/oiio
-// BSD 3-clause license:
-//  https://github.com/OpenImageIO/oiio/blob/master/LICENSE
+// Copyright Contributors to the OpenImageIO project.
+// SPDX-License-Identifier: Apache-2.0
+// https://github.com/AcademySoftwareFoundation/OpenImageIO
 
 // clang-format off
 
@@ -18,6 +17,7 @@
 #include <OpenImageIO/dassert.h>
 #include <OpenImageIO/oiioversion.h>
 #include <OpenImageIO/platform.h>
+#include <OpenImageIO/detail/fmt.h>
 
 OIIO_NAMESPACE_BEGIN
 
@@ -42,14 +42,14 @@ OIIO_INLINE_CONSTEXPR oiio_span_size_type dynamic_extent = -1;
 
 
 
-/// span<T> is a non-owning, non-copying, non-allocating reference to a
+/// `span<T>` is a non-owning, non-copying, non-allocating reference to a
 /// contiguous array of T objects known length. A 'span` encapsulates both a
 /// pointer and a length, and thus is a safer way of passing pointers around
 /// (because the function called knows how long the array is). A function
 /// that might ordinarily take a `T*` and a length could instead just take a
 /// `span<T>`.
 ///
-/// `A span<T>` is mutable (the values in the array may be modified).  A
+/// A `span<T>` is mutable (the values in the array may be modified).  A
 /// non-mutable (i.e., read-only) reference would be `span<const T>`. Thus,
 /// a function that might ordinarily take a `const T*` and a length could
 /// instead take a `span<const T>`.
@@ -58,7 +58,7 @@ OIIO_INLINE_CONSTEXPR oiio_span_size_type dynamic_extent = -1;
 /// `span<const T>`.
 ///
 /// A `span` may be initialized explicitly from a pointer and length, by
-/// initializing with a `std::vector<T>`, or by initalizing with a constant
+/// initializing with a `std::vector<T>`, or by initializing with a constant
 /// (treated as an array of length 1). For all of these cases, no extra
 /// allocations are performed, and no extra copies of the array contents are
 /// made.
@@ -220,8 +220,8 @@ private:
 
 
 /// cspan<T> is a synonym for a non-mutable span<const T>.
-template <typename T>
-using cspan = span<const T>;
+template <typename T, oiio_span_size_type Extent = dynamic_extent>
+using cspan = span<const T, Extent>;
 
 
 
@@ -346,8 +346,8 @@ private:
 
 
 /// cspan_strided<T> is a synonym for a non-mutable span_strided<const T>.
-template <typename T>
-using cspan_strided = span_strided<const T>;
+template <typename T, oiio_span_size_type Extent = dynamic_extent>
+using cspan_strided = span_strided<const T, Extent>;
 
 
 
@@ -406,3 +406,15 @@ constexpr ptrdiff_t ssize(const OIIO::span_strided<T, E>& c) {
 #define OIIO_SPAN_HAS_STD_SIZE 1
 
 } // namespace std
+
+// clang-format on
+
+
+
+/// Custom fmtlib formatters for span/cspan types.
+namespace fmt {
+template<typename T, OIIO::oiio_span_size_type Extent>
+struct formatter<OIIO::span<T, Extent>>
+    : OIIO::pvt::index_formatter<OIIO::span<T, Extent>> {
+};
+}  // namespace fmt

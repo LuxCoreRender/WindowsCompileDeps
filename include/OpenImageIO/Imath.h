@@ -1,30 +1,51 @@
-// Copyright 2008-present Contributors to the OpenImageIO project.
-// SPDX-License-Identifier: BSD-3-Clause
-// https://github.com/OpenImageIO/oiio/
+// Copyright Contributors to the OpenImageIO project.
+// SPDX-License-Identifier: Apache-2.0
+// https://github.com/AcademySoftwareFoundation/OpenImageIO/
 
 // clang-format off
 
 #pragma once
 
+#include <OpenImageIO/detail/fmt.h>
+
+#include <OpenImageIO/half.h>
+
+#ifndef OIIO_IMATH_H_INCLUDED
+#define OIIO_IMATH_H_INCLUDED 1
 
 // Determine which Imath we're dealing with and include the appropriate
 // headers.
 
-#include <OpenEXR/OpenEXRConfig.h>
-#define OIIO_OPENEXR_VERSION ((10000*OPENEXR_VERSION_MAJOR) + \
-                              (100*OPENEXR_VERSION_MINOR) + \
-                              OPENEXR_VERSION_PATCH)
+#define OIIO_USING_IMATH 3
 
-#if OIIO_OPENEXR_VERSION >= 20599 /* 2.5.99: pre-3.0 */
-#   define OIIO_USING_IMATH 3
+#if OIIO_USING_IMATH >= 3
 #   include <Imath/ImathColor.h>
 #   include <Imath/ImathMatrix.h>
 #   include <Imath/ImathVec.h>
-#   include <Imath/half.h>
 #else
-#   define OIIO_USING_IMATH 2
 #   include <OpenEXR/ImathColor.h>
 #   include <OpenEXR/ImathMatrix.h>
 #   include <OpenEXR/ImathVec.h>
-#   include <OpenEXR/half.h>
 #endif
+
+
+/// Custom fmtlib formatters for Imath types.
+
+FMT_BEGIN_NAMESPACE
+template<> struct formatter<Imath::V2f>
+    : OIIO::pvt::array_formatter<Imath::V2f, float, 2> {};
+template<> struct formatter<Imath::V3f>
+    : OIIO::pvt::array_formatter<Imath::V3f, float, 3> {};
+template<> struct formatter<Imath::V4f>
+    : OIIO::pvt::array_formatter<Imath::V4f, float, 4> {};
+#if OIIO_USING_IMATH >= 3
+template<> struct formatter<Imath::M22f>
+    : OIIO::pvt::array_formatter<Imath::M22f, float, 4> {};
+#endif
+template<> struct formatter<Imath::M33f>
+    : OIIO::pvt::array_formatter<Imath::M33f, float, 9> {};
+template<> struct formatter<Imath::M44f>
+    : OIIO::pvt::array_formatter<Imath::M44f, float, 16> {};
+FMT_END_NAMESPACE
+
+#endif // !defined(OIIO_IMATH_H_INCLUDED)

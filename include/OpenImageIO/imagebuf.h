@@ -1,6 +1,6 @@
-// Copyright 2008-present Contributors to the OpenImageIO project.
-// SPDX-License-Identifier: BSD-3-Clause
-// https://github.com/OpenImageIO/oiio/blob/master/LICENSE.md
+// Copyright Contributors to the OpenImageIO project.
+// SPDX-License-Identifier: BSD-3-Clause and Apache-2.0
+// https://github.com/AcademySoftwareFoundation/OpenImageIO
 
 
 #pragma once
@@ -14,7 +14,6 @@
 
 #include <OpenImageIO/dassert.h>
 #include <OpenImageIO/fmath.h>
-#include <OpenImageIO/imagecache.h>
 #include <OpenImageIO/imageio.h>
 
 #include <limits>
@@ -25,6 +24,11 @@ OIIO_NAMESPACE_BEGIN
 
 class ImageBuf;
 class ImageBufImpl;  // Opaque type for the unique_ptr.
+class ImageCache;
+
+namespace pvt {
+class ImageCacheTile;
+};  // namespace pvt
 
 
 
@@ -56,6 +60,60 @@ enum class InitializePixels { No = 0, Yes = 1 };
 /// routines for setting and getting individual pixels, that hides most of
 /// the details of memory layout and data representation (translating
 /// to/from float automatically).
+///
+/// ImageBuf makes an important simplification: all channels are the same
+/// data type. For example, if an image file on disk has a mix of `half` and
+/// `float` channels, the in-memory ImageBuf representation will be entirely
+/// `float` (for mixed data types, it will try to pick one that can best
+/// represent all channels without a loss of precision or range). However,
+/// by using the `set_write_format()` method, it is still possible to write
+/// an ImageBuf to a file with mixed channel types.
+///
+/// Most of the time, ImageBuf data is read lazily (I/O only happens when
+/// you first call methods that actually need metadata or pixel data).
+/// Explicit calls to `read()` are therefore optional and are only needed
+/// if you want to specify non-default arguments (such as choosing something
+/// other than the first subimage of the file, or forcing the read to
+/// translate into a different data format than appears in the file).
+///
+/// ImageBuf data coming from disk files may optionally be backed by
+/// ImageCache, by explicitly passing an `ImageCache*` to the ImageBuf
+/// constructor or `reset()` method (pass `ImageCache::create()` to get a
+/// pointer to the default global ImageCache), or by having previously set the
+/// global OIIO attribute `"imagebuf:use_imagecache"` to a nonzero value. When
+/// an ImageBuf is backed by ImageCache in this way, specific regions of the
+/// image will only be read if and when they are needed, and if there are many
+/// large ImageBuf's, memory holding pixels not recently accessed will be
+/// automatically freed if the cache size limit is reached.
+///
+/// Writable ImageBufs are always stored entirely in memory, and do not use
+/// the ImageCache or any other clever schemes to limit memory. If you have
+/// enough simultaneous writeable large ImageBuf's, you can run out of RAM.
+/// Note that if an ImageBuf starts as readable (backed by ImageCache), any
+/// alterations to its pixels (for example, via `setpixel()` or traversing
+/// it with a non-const `Iterator`) will cause it to be read entirely into
+/// memory and remain in memory thereafter for the rest of the life of that
+/// ImageBuf.
+///
+/// Notes about ImageBuf thread safety:
+///
+/// * The various read-only methods for accessing the spec or the pixels,
+///   including `init_spec()`, `read()`, `spec()`, all the getpixel flavors
+///   and `ConstIterator` over the pixels, and other informational methods
+///   such as `roi()`, all are thread-safe and may be called concurrently
+///   with any of the other thread-safe methods.
+/// * Methods that alter pixel values, such as all the setpixel flavors,
+///   and (non-const) `Iterator` over the pixels, and the `write()` method
+///   are "thread safe" in the sense that you won't crash your app by doing
+///   these concurrently with each other or with the reading functionality,
+///   but on the other hand, if two threads are changing the same pixels
+///   simultaneously or one is writing while others are reading, you may end
+///   up with an inconsistent resulting image.
+/// * Construction and destruction, `reset()`, and anything that alters
+///   image metadata (such as writes through `specmod()`) are NOT THREAD
+///   SAFE and you should ensure that you are not doing any of these calls
+///   simultaneously with any other operations on the same ImageBuf.
+///
 class OIIO_API ImageBuf {
 public:
     /// An ImageBuf can store its pixels in one of several ways (each
@@ -116,18 +174,16 @@ public:
     ///             The subimage and MIP level to read (defaults to the
     ///             first subimage of the file, highest-res MIP level).
     /// @param imagecache
-    ///             Optionally, a particular ImageCache to use. If nullptr,
-    ///             the default global/shared image cache will be used. If
-    ///             a custom ImageCache (not the global/shared one), it is
-    ///             important that the IC should not be destroyed while the
-    ///             ImageBuf is still alive.
+    ///             Optionally, an ImageCache to use, if possible, rather
+    ///             than reading the entire image file into memory.
     /// @param config
     ///             Optionally, a pointer to an ImageSpec whose metadata
     ///             contains configuration hints that set options related
     ///             to the opening and reading of the file.
     /// @param ioproxy
     ///         Optional pointer to an IOProxy to use when reading from the
-    ///         file. The caller retains ownership of the proxy.
+    ///         file. The caller retains ownership of the proxy, and must
+    ///         ensure that it remains valid for the lifetime of the ImageBuf.
     ///
     explicit ImageBuf(string_view name, int subimage = 0, int miplevel = 0,
                       ImageCache* imagecache       = nullptr,
@@ -185,8 +241,14 @@ public:
     ///             storage for the pixels. It must be already allocated
     ///             with enough space to hold a full image as described by
     ///             `spec`.
+    /// @param  xstride/ystride/zstride
+    ///             The distance in bytes between successive pixels,
+    ///             scanlines, and image planes in the buffer (or
+    ///             `AutoStride` to indicate "contiguous" data in any of
+    ///             those dimensions).
     ///
-    ImageBuf(const ImageSpec& spec, void* buffer);
+    ImageBuf(const ImageSpec& spec, void* buffer, stride_t xstride = AutoStride,
+             stride_t ystride = AutoStride, stride_t zstride = AutoStride);
 
     // Deprecated/useless synonym for `ImageBuf(spec,buffer)` but also gives
     // it an internal name.
@@ -232,15 +294,17 @@ public:
     void reset(const ImageSpec& spec,
                InitializePixels zero = InitializePixels::Yes);
 
-    // Deprecated/useless synonym for `reset(spec, spec, zero)` and also
-    // give it an internal name.
+    // Deprecated/useless synonym for `reset(spec, zero)` and also give it an
+    // internal name.
     void reset(string_view name, const ImageSpec& spec,
                InitializePixels zero = InitializePixels::Yes);
 
     /// Destroy any previous contents of the ImageBuf and re-initialize it
     /// as if newly constructed with the same arguments, to "wrap" existing
     /// pixel memory owned by the calling application.
-    void reset(const ImageSpec& spec, void* buffer);
+    void reset(const ImageSpec& spec, void* buffer,
+               stride_t xstride = AutoStride, stride_t ystride = AutoStride,
+               stride_t zstride = AutoStride);
 
     /// Make the ImageBuf be writable. That means that if it was previously
     /// backed by an ImageCache (storage was `IMAGECACHE`), it will force a
@@ -322,7 +386,8 @@ public:
     ///             `LOCALPIXELS` storage buffer). Otherwise, it is up to
     ///             the implementation whether to immediately read or have
     ///             the image backed by an ImageCache (storage
-    ///             `IMAGECACHE`.)
+    ///             `IMAGECACHE`, if the ImageBuf was originall constructed
+    ///             or reset with an ImageCache specified).
     /// @param  convert
     ///             If set to a specific type (not`UNKNOWN`), the ImageBuf
     ///             memory will be allocated for that type specifically and
@@ -445,6 +510,7 @@ public:
 
 #ifndef DOXYGEN_SHOULD_SKIP_THIS
     // DEPRECATED(1.9): old version did not have the data type
+    OIIO_DEPRECATED("use other write() that takes the dtype argument (1.9)")
     bool write(string_view filename, string_view fileformat,
                ProgressCallback progress_callback = nullptr,
                void* progress_callback_data       = nullptr) const
@@ -658,9 +724,12 @@ public:
     void interppixel_NDC(float s, float t, float* pixel,
                          WrapMode wrap = WrapBlack) const;
 
+#ifndef DOXYGEN_SHOULD_SKIP_THIS
     // DEPRECATED (1.5) synonym for interppixel_NDC.
+    OIIO_DEPRECATED("use interppixel_NDC (1.5)")
     void interppixel_NDC_full(float s, float t, float* pixel,
                               WrapMode wrap = WrapBlack) const;
+#endif
 
     /// Bicubic interpolation at pixel coordinates (x,y).
     void interppixel_bicubic(float x, float y, float* pixel,
@@ -733,10 +802,12 @@ public:
 
     /// Copy the data into the given ROI of the ImageBuf. The data points to
     /// values specified by `format`, with layout detailed by the stride
-    /// values (in bytes, with AutoStride indicating "contiguous" layout).
-    /// It is up to the caller to ensure that data points to an area of
-    /// memory big enough to account for the ROI. Return true if the
-    /// operation could be completed, otherwise return false.
+    /// values (in bytes, with AutoStride indicating "contiguous" layout). It
+    /// is up to the caller to ensure that data points to an area of memory
+    /// big enough to account for the ROI. If `roi` is set to `ROI::all()`,
+    /// the data buffer is assumed to have the same resolution as the ImageBuf
+    /// itself. Return true if the operation could be completed, otherwise
+    /// return false.
     bool set_pixels(ROI roi, TypeDesc format, const void* data,
                     stride_t xstride = AutoStride,
                     stride_t ystride = AutoStride,
@@ -784,25 +855,56 @@ public:
     /// channels).
     const ImageSpec& nativespec() const;
 
+    /// Does this ImageBuf have an associated thumbnail?
+    bool has_thumbnail() const;
+
+    /// Return a shared pointer to an ImageBuf containing a thumbnail of the
+    /// image (if it existed in the file), which may be empty if there is no
+    /// thumbnail.
+    std::shared_ptr<ImageBuf> get_thumbnail() const;
+
+    /// Reset the thumbnail image associated with this ImageBuf to `thumb`.
+    /// This call will invalidate any references previously returned by
+    /// `thumbnail()`.
+    void set_thumbnail(const ImageBuf& thumb);
+
+    /// Clear any thumbnail associated with this ImageBuf. This call will
+    /// invalidate any references previously returned by `thumbnail()`.
+    void clear_thumbnail();
+
     /// Returns the name of the buffer (name of the file, for an ImageBuf
     /// read from disk).
     string_view name(void) const;
 
-    /// Return the name of the image file format of the disk file we read
-    /// into this image, for example `"openexr"`.  Returns an empty string
-    /// if this image was not the result of a read().
+    /// Return the name of the buffer as a ustring.
+    ustring uname(void) const;
+
+    /// Return the name of the image file format of the file this ImageBuf
+    /// refers to (for example `"openexr"`).  Returns an empty string for an
+    /// ImageBuf that was not constructed as a direct reference to a file.
     string_view file_format_name(void) const;
 
-    /// Return the index of the subimage the ImageBuf is currently holding.
+    /// Return the index of the subimage within the file that the ImageBuf
+    /// refers to. This will always be 0 for an ImageBuf that was not
+    /// constructed as a direct reference to a file, or if the file
+    /// contained only one image.
     int subimage() const;
 
-    /// Return the number of subimages in the file.
+    /// Return the number of subimages in the file this ImageBuf refers to.
+    /// This will always be 1 for an ImageBuf that was not constructed as a
+    /// direct reference to a file.
     int nsubimages() const;
 
-    /// Return the index of the miplevel the ImageBuf is currently holding.
+    /// Return the index of the miplevel with a file's subimage that the
+    /// ImageBuf is currently holding. This will always be 0 for an ImageBuf
+    /// that was not constructed as a direct reference to a file, or if the
+    /// subimage within that file was not MIP-mapped.
     int miplevel() const;
 
-    /// Return the number of miplevels of the current subimage.
+    /// Return the number of MIP levels of the current subimage within the
+    /// file this ImageBuf refers to. This will always be 1 for an ImageBuf
+    /// that was not constructed as a direct reference to a file, or if this
+    /// subimage within the file was not MIP-mapped.
     int nmiplevels() const;
 
     /// Return the number of color channels in the image. This is equivalent
@@ -891,6 +993,11 @@ public:
     /// Return a raw pointer to "local" pixel memory, if they are fully in
     /// RAM and not backed by an ImageCache, or `nullptr` otherwise.  You
     /// can also test it like a bool to find out if pixels are local.
+    ///
+    /// Note that the data are not necessarily contiguous; use the
+    /// `pixel_stride()`, `scanline_stride()`, and `z_stride()` methods
+    /// to find out the spacing between pixels, scanlines, and volumetric
+    /// planes, respectively.
     void* localpixels();
     const void* localpixels() const;
 
@@ -901,11 +1008,20 @@ public:
     /// Z plane stride within the localpixels memory.
     stride_t z_stride() const;
 
+    /// Is the data layout "contiguous", i.e.,
+    /// ```
+    ///     pixel_stride == nchannels * pixeltype().size()
+    ///     scanline_stride == pixel_stride * spec().width
+    ///     z_stride == scanline_stride * spec().height
+    /// ```
+    bool contiguous() const;
+
     /// Are the pixels backed by an ImageCache, rather than the whole
     /// image being in RAM somewhere?
     bool cachedpixels() const;
 
-    /// A pointer to the underlying ImageCache.
+    /// A pointer to the underlying ImageCache, or nullptr if this ImageBuf
+    /// is not backed by an ImageCache.
     ImageCache* imagecache() const;
 
     /// Return the address where pixel `(x,y,z)`, channel `ch`, is stored in
@@ -939,11 +1055,13 @@ public:
     /// @{
     /// @name Error handling
 
-    /// Add simple string to the error message list for this IB.
-    void error(const std::string& message) const;
+    /// Add simple string to the error message list for this IB. It is not
+    /// necessary to have the error message contain a trailing newline.
+    void error(string_view message) const;
 
-    /// Error reporting for ImageBuf: call this with Python / {fmt} /
-    /// std::format style formatting specification.
+    /// Error reporting for ImageBuf: call this with std::format style
+    /// formatting specification. It is not necessary to have the error
+    /// message contain a trailing newline.
     template<typename... Args>
     void errorfmt(const char* fmt, const Args&... args) const
     {
@@ -951,7 +1069,8 @@ public:
     }
 
     /// Error reporting for ImageBuf: call this with printf-like arguments
-    /// to report an error.
+    /// to report an error. It is not necessary to have the error message
+    /// contain a trailing newline.
     template<typename... Args>
     void errorf(const char* fmt, const Args&... args) const
     {
@@ -959,10 +1078,12 @@ public:
     }
 
     /// Error reporting for ImageBuf: call this with Strutil::format
-    /// formatting conventions. Beware, this is in transition, is currently
-    /// printf-like but will someday change to python-like!
+    /// formatting conventions.  It is not necessary to have the error
+    /// message contain a trailing newline. Beware, this is in transition,
+    /// is currently printf-like but will someday change to python-like!
     template<typename... Args>
-    void error(const char* fmt, const Args&... args) const
+    OIIO_FORMAT_DEPRECATED void error(const char* fmt,
+                                      const Args&... args) const
     {
         error(Strutil::format(fmt, args...));
     }
@@ -980,10 +1101,11 @@ public:
     /// message ready to retrieve via `geterror()`.
     bool has_error(void) const;
 
-    /// Return the text of all error messages issued since `geterror()` was
-    /// called (or an empty string if no errors are pending).  This also
-    /// clears the error message for next time.
-    std::string geterror(void) const;
+    /// Return the text of all pending error messages issued against this
+    /// ImageBuf, and clear the pending error message unless `clear` is
+    /// false. If no error message is pending, it will return an empty
+    /// string.
+    std::string geterror(bool clear = true) const;
 
     /// @}
 
@@ -1062,93 +1184,44 @@ public:
 
     friend class IteratorBase;
 
+    /// Base class for Iterator and ConstIterator -- this contains all the
+    /// common functionality.
     class IteratorBase {
-    public:
-        IteratorBase(const ImageBuf& ib, WrapMode wrap)
-            : m_ib(&ib)
-        {
-            init_ib(wrap);
-            range_is_image();
-        }
+    protected:
+        OIIO_API IteratorBase(const ImageBuf& ib, WrapMode wrap,
+                              bool write = false);
+
+        OIIO_API IteratorBase(const ImageBuf& ib, int x, int y, int z,
+                              WrapMode wrap, bool write = false);
 
         /// Construct valid iteration region from ImageBuf and ROI.
-        IteratorBase(const ImageBuf& ib, const ROI& roi, WrapMode wrap)
-            : m_ib(&ib)
-        {
-            init_ib(wrap);
-            if (roi.defined()) {
-                m_rng_xbegin = roi.xbegin;
-                m_rng_xend   = roi.xend;
-                m_rng_ybegin = roi.ybegin;
-                m_rng_yend   = roi.yend;
-                m_rng_zbegin = roi.zbegin;
-                m_rng_zend   = roi.zend;
-            } else {
-                range_is_image();
-            }
-        }
+        OIIO_API IteratorBase(const ImageBuf& ib, const ROI& roi, WrapMode wrap,
+                              bool write = false);
 
         /// Construct from an ImageBuf and designated region -- iterate
         /// over region, starting with the upper left pixel.
-        IteratorBase(const ImageBuf& ib, int xbegin, int xend, int ybegin,
-                     int yend, int zbegin, int zend, WrapMode wrap)
-            : m_ib(&ib)
-        {
-            init_ib(wrap);
-            m_rng_xbegin = xbegin;
-            m_rng_xend   = xend;
-            m_rng_ybegin = ybegin;
-            m_rng_yend   = yend;
-            m_rng_zbegin = zbegin;
-            m_rng_zend   = zend;
-        }
+        OIIO_API IteratorBase(const ImageBuf& ib, int xbegin, int xend,
+                              int ybegin, int yend, int zbegin, int zend,
+                              WrapMode wrap, bool write = false);
 
-        IteratorBase(const IteratorBase& i)
-            : m_ib(i.m_ib)
-            , m_rng_xbegin(i.m_rng_xbegin)
-            , m_rng_xend(i.m_rng_xend)
-            , m_rng_ybegin(i.m_rng_ybegin)
-            , m_rng_yend(i.m_rng_yend)
-            , m_rng_zbegin(i.m_rng_zbegin)
-            , m_rng_zend(i.m_rng_zend)
-            , m_proxydata(i.m_proxydata)
-        {
-            init_ib(i.m_wrap);
-        }
+        /// Copy constructor
+        OIIO_API IteratorBase(const IteratorBase& i);
+
+        /// Assign one IteratorBase to another
+        OIIO_API const IteratorBase& operator=(const IteratorBase& i);
 
         ~IteratorBase()
         {
             if (m_tile)
-                m_ib->imagecache()->release_tile(m_tile);
+                release_tile();
         }
 
-        /// Assign one IteratorBase to another
-        ///
-        const IteratorBase& assign_base(const IteratorBase& i)
-        {
-            if (m_tile)
-                m_ib->imagecache()->release_tile(m_tile);
-            m_tile      = nullptr;
-            m_proxydata = i.m_proxydata;
-            m_ib        = i.m_ib;
-            init_ib(i.m_wrap);
-            m_rng_xbegin = i.m_rng_xbegin;
-            m_rng_xend   = i.m_rng_xend;
-            m_rng_ybegin = i.m_rng_ybegin;
-            m_rng_yend   = i.m_rng_yend;
-            m_rng_zbegin = i.m_rng_zbegin;
-            m_rng_zend   = i.m_rng_zend;
-            return *this;
-        }
-
+    public:
         /// Retrieve the current x location of the iterator.
-        ///
         int x() const { return m_x; }
         /// Retrieve the current y location of the iterator.
-        ///
         int y() const { return m_y; }
         /// Retrieve the current z location of the iterator.
-        ///
         int z() const { return m_z; }
 
         /// Is the current location within the designated iteration range?
@@ -1176,7 +1249,6 @@ public:
         bool exists() const { return m_exists; }
 
         /// Are we finished iterating over the region?
-        //
         bool done() const
         {
             // We're "done" if we are both invalid and in exactly the
@@ -1195,54 +1267,11 @@ public:
 
         /// Explicitly point the iterator.  This results in an invalid
         /// iterator if outside the previously-designated region.
-        void pos(int x_, int y_, int z_ = 0)
-        {
-            if (x_ == m_x + 1 && x_ < m_rng_xend && y_ == m_y && z_ == m_z
-                && m_valid && m_exists) {
-                // Special case for what is in effect just incrementing x
-                // within the iteration region.
-                m_x = x_;
-                pos_xincr();
-                // Not necessary? m_exists = (x_ < m_img_xend);
-                OIIO_DASSERT((x_ < m_img_xend) == m_exists);
-                return;
-            }
-            bool v = valid(x_, y_, z_);
-            bool e = exists(x_, y_, z_);
-            if (m_localpixels) {
-                if (e)
-                    m_proxydata = (char*)m_ib->pixeladdr(x_, y_, z_);
-                else {  // pixel not in data window
-                    m_x = x_;
-                    m_y = y_;
-                    m_z = z_;
-                    if (m_wrap == WrapBlack) {
-                        m_proxydata = (char*)m_ib->blackpixel();
-                    } else {
-                        if (m_ib->do_wrap(x_, y_, z_, m_wrap))
-                            m_proxydata = (char*)m_ib->pixeladdr(x_, y_, z_);
-                        else
-                            m_proxydata = (char*)m_ib->blackpixel();
-                    }
-                    m_valid  = v;
-                    m_exists = e;
-                    return;
-                }
-            } else if (!m_deep)
-                m_proxydata = (char*)m_ib->retile(x_, y_, z_, m_tile,
-                                                  m_tilexbegin, m_tileybegin,
-                                                  m_tilezbegin, m_tilexend, e,
-                                                  m_wrap);
-            m_x      = x_;
-            m_y      = y_;
-            m_z      = z_;
-            m_valid  = v;
-            m_exists = e;
-        }
+        void OIIO_API pos(int x_, int y_, int z_ = 0);
 
         /// Increment to the next pixel in the region.
         ///
-        OIIO_FORCEINLINE void operator++()
+        inline void operator++()
         {
             if (++m_x < m_rng_xend) {
                 // Special case: we only incremented x, didn't change y
@@ -1266,7 +1295,6 @@ public:
             pos(m_x, m_y, m_z);
         }
         /// Increment to the next pixel in the region.
-        ///
         void operator++(int) { ++(*this); }
 
         /// Return the iteration range
@@ -1279,21 +1307,30 @@ public:
         /// Reset the iteration range for this iterator and reposition to
         /// the beginning of the range, but keep referring to the same
         /// image.
-        void rerange(int xbegin, int xend, int ybegin, int yend, int zbegin,
-                     int zend, WrapMode wrap = WrapDefault)
+        void OIIO_API rerange(int xbegin, int xend, int ybegin, int yend,
+                              int zbegin, int zend,
+                              WrapMode wrap = WrapDefault);
+
+        const void* rawptr() const { return m_proxydata; }
+
+        /// Retrieve the deep data value of sample s of channel c.
+        float deep_value(int c, int s) const
         {
-            m_x          = 1 << 31;
-            m_y          = 1 << 31;
-            m_z          = 1 << 31;
-            m_wrap       = (wrap == WrapDefault ? WrapBlack : wrap);
-            m_rng_xbegin = xbegin;
-            m_rng_xend   = xend;
-            m_rng_ybegin = ybegin;
-            m_rng_yend   = yend;
-            m_rng_zbegin = zbegin;
-            m_rng_zend   = zend;
-            pos(xbegin, ybegin, zbegin);
+            return m_ib->deep_value(m_x, m_y, m_z, c, s);
         }
+
+        uint32_t deep_value_uint(int c, int s) const
+        {
+            return m_ib->deep_value_uint(m_x, m_y, m_z, c, s);
+        }
+
+        bool localpixels() const { return m_localpixels; }
+
+        // Did we encounter an error while we iterated?
+        bool has_error() const { return m_readerror; }
+
+        // Clear the error flag
+        void clear_error() { m_readerror = false; }
 
     protected:
         friend class ImageBuf;
@@ -1309,74 +1346,38 @@ public:
         int m_rng_xbegin, m_rng_xend, m_rng_ybegin, m_rng_yend, m_rng_zbegin,
             m_rng_zend;
         int m_x, m_y, m_z;
-        ImageCache::Tile* m_tile = nullptr;
+        pvt::ImageCacheTile* m_tile = nullptr;
         int m_tilexbegin, m_tileybegin, m_tilezbegin;
         int m_tilexend;
         int m_nchannels;
-        size_t m_pixel_bytes;
+        stride_t m_pixel_stride;
         char* m_proxydata = nullptr;
         WrapMode m_wrap   = WrapBlack;
+        bool m_readerror  = false;
 
         // Helper called by ctrs -- set up some locally cached values
         // that are copied or derived from the ImageBuf.
-        void init_ib(WrapMode wrap)
-        {
-            const ImageSpec& spec(m_ib->spec());
-            m_deep        = spec.deep;
-            m_localpixels = (m_ib->localpixels() != nullptr);
-            m_img_xbegin  = spec.x;
-            m_img_xend    = spec.x + spec.width;
-            m_img_ybegin  = spec.y;
-            m_img_yend    = spec.y + spec.height;
-            m_img_zbegin  = spec.z;
-            m_img_zend    = spec.z + spec.depth;
-            m_nchannels   = spec.nchannels;
-            //            m_tilewidth = spec.tile_width;
-            m_pixel_bytes = spec.pixel_bytes();
-            m_x           = 1 << 31;
-            m_y           = 1 << 31;
-            m_z           = 1 << 31;
-            m_wrap        = (wrap == WrapDefault ? WrapBlack : wrap);
-        }
+        void OIIO_API init_ib(WrapMode wrap, bool write);
 
         // Helper called by ctrs -- make the iteration range the full
         // image data window.
-        void range_is_image()
-        {
-            m_rng_xbegin = m_img_xbegin;
-            m_rng_xend   = m_img_xend;
-            m_rng_ybegin = m_img_ybegin;
-            m_rng_yend   = m_img_yend;
-            m_rng_zbegin = m_img_zbegin;
-            m_rng_zend   = m_img_zend;
-        }
+        void OIIO_API range_is_image();
 
         // Helper called by pos(), but ONLY for the case where we are
         // moving from an existing pixel to the next spot in +x.
         // Note: called *after* m_x was incremented!
-        OIIO_FORCEINLINE void pos_xincr()
+        inline void pos_xincr()
         {
             OIIO_DASSERT(m_exists && m_valid);   // precondition
             OIIO_DASSERT(valid(m_x, m_y, m_z));  // should be true by definition
-            m_proxydata += m_pixel_bytes;
             if (m_localpixels) {
-                if (OIIO_UNLIKELY(m_x >= m_img_xend)) {
-                    // Ran off the end of the row
-                    m_exists = false;
-                    if (m_wrap == WrapBlack) {
-                        m_proxydata = (char*)m_ib->blackpixel();
-                    } else {
-                        int x = m_x, y = m_y, z = m_z;
-                        if (m_ib->do_wrap(x, y, z, m_wrap))
-                            m_proxydata = (char*)m_ib->pixeladdr(x, y, z);
-                        else
-                            m_proxydata = (char*)m_ib->blackpixel();
-                    }
-                }
-            } else if (m_deep) {
-                m_proxydata = nullptr;
-            } else {
+                OIIO_DASSERT(m_proxydata != nullptr);
+                m_proxydata += m_pixel_stride;
+                if (OIIO_UNLIKELY(m_x >= m_img_xend))
+                    pos_xincr_local_past_end();
+            } else if (!m_deep) {
                 // Cached image
+                m_proxydata += m_pixel_stride;
                 bool e = m_x < m_img_xend;
                 if (OIIO_UNLIKELY(!(e && m_x < m_tilexend && m_tile))) {
                     // Crossed a tile boundary
@@ -1384,32 +1385,22 @@ public:
                                                       m_tilexbegin,
                                                       m_tileybegin,
                                                       m_tilezbegin, m_tilexend,
-                                                      e, m_wrap);
+                                                      m_readerror, e, m_wrap);
                     m_exists    = e;
                 }
             }
         }
 
-        // Set to the "done" position
-        void pos_done()
-        {
-            m_valid = false;
-            m_x     = m_rng_xbegin;
-            m_y     = m_rng_ybegin;
-            m_z     = m_rng_zend;
-        }
+        // Helper for pos_xincr for when we go off the end of the row
+        void OIIO_API pos_xincr_local_past_end();
 
-        // Make sure it's writable. Use with caution!
-        void make_writable()
-        {
-            if (!m_localpixels) {
-                const_cast<ImageBuf*>(m_ib)->make_writable(true);
-                OIIO_DASSERT(m_ib->storage() != IMAGECACHE);
-                m_tile      = nullptr;
-                m_proxydata = nullptr;
-                init_ib(m_wrap);
-            }
-        }
+        // Set to the "done" position
+        void OIIO_API pos_done();
+
+        // Helper to release the IC tile held by m_tile. This is implemented
+        // elsewhere to prevent imagebuf.h needing to know anything more
+        // about ImageCache.
+        void OIIO_API release_tile();
     };
 
     /// Templated class for referring to an individual pixel in an
@@ -1436,64 +1427,37 @@ public:
         /// Construct from just an ImageBuf -- iterate over the whole
         /// region, starting with the upper left pixel of the region.
         Iterator(ImageBuf& ib, WrapMode wrap = WrapDefault)
-            : IteratorBase(ib, wrap)
+            : IteratorBase(ib, wrap, true)
         {
-            make_writable();
-            pos(m_rng_xbegin, m_rng_ybegin, m_rng_zbegin);
-            if (m_rng_xbegin == m_rng_xend || m_rng_ybegin == m_rng_yend
-                || m_rng_zbegin == m_rng_zend)
-                pos_done();  // make empty range look "done"
         }
         /// Construct from an ImageBuf and a specific pixel index.
         /// The iteration range is the full image.
         Iterator(ImageBuf& ib, int x, int y, int z = 0,
                  WrapMode wrap = WrapDefault)
-            : IteratorBase(ib, wrap)
+            : IteratorBase(ib, x, y, z, wrap, true)
         {
-            make_writable();
-            pos(x, y, z);
         }
         /// Construct read-write iteration region from ImageBuf and ROI.
         Iterator(ImageBuf& ib, const ROI& roi, WrapMode wrap = WrapDefault)
-            : IteratorBase(ib, roi, wrap)
+            : IteratorBase(ib, roi, wrap, true)
         {
-            make_writable();
-            pos(m_rng_xbegin, m_rng_ybegin, m_rng_zbegin);
-            if (m_rng_xbegin == m_rng_xend || m_rng_ybegin == m_rng_yend
-                || m_rng_zbegin == m_rng_zend)
-                pos_done();  // make empty range look "done"
         }
         /// Construct from an ImageBuf and designated region -- iterate
         /// over region, starting with the upper left pixel.
         Iterator(ImageBuf& ib, int xbegin, int xend, int ybegin, int yend,
                  int zbegin = 0, int zend = 1, WrapMode wrap = WrapDefault)
-            : IteratorBase(ib, xbegin, xend, ybegin, yend, zbegin, zend, wrap)
+            : IteratorBase(ib, xbegin, xend, ybegin, yend, zbegin, zend, wrap,
+                           true)
         {
-            make_writable();
-            pos(m_rng_xbegin, m_rng_ybegin, m_rng_zbegin);
-            if (m_rng_xbegin == m_rng_xend || m_rng_ybegin == m_rng_yend
-                || m_rng_zbegin == m_rng_zend)
-                pos_done();  // make empty range look "done"
         }
         /// Copy constructor.
         ///
         Iterator(Iterator& i)
-            : IteratorBase(i.m_ib, i.m_wrap)
+            : IteratorBase(i.m_ib, i.m_wrap, true)
         {
-            make_writable();
-            pos(i.m_x, i.m_y, i.m_z);
         }
 
         ~Iterator() {}
-
-        /// Assign one Iterator to another
-        ///
-        const Iterator& operator=(const Iterator& i)
-        {
-            assign_base(i);
-            pos(i.m_x, i.m_y, i.m_z);
-            return *this;
-        }
 
         /// Dereferencing the iterator gives us a proxy for the pixel,
         /// which we can index for reading or assignment.
@@ -1529,17 +1493,6 @@ public:
                                                                  n);
         }
 
-        /// Retrieve the deep data value of sample s of channel c.
-        USERT deep_value(int c, int s) const
-        {
-            return convert_type<float, USERT>(
-                m_ib->deep_value(m_x, m_y, m_z, c, s));
-        }
-        uint32_t deep_value_uint(int c, int s) const
-        {
-            return m_ib->deep_value_uint(m_x, m_y, m_z, c, s);
-        }
-
         /// Set the deep data value of sample s of channel c. (Only use this
         /// if deep_alloc() has been called.)
         void set_deep_value(int c, int s, float value)
@@ -1565,28 +1518,19 @@ public:
         ConstIterator(const ImageBuf& ib, WrapMode wrap = WrapDefault)
             : IteratorBase(ib, wrap)
         {
-            pos(m_rng_xbegin, m_rng_ybegin, m_rng_zbegin);
-            if (m_rng_xbegin == m_rng_xend || m_rng_ybegin == m_rng_yend
-                || m_rng_zbegin == m_rng_zend)
-                pos_done();  // make empty range look "done"
         }
         /// Construct from an ImageBuf and a specific pixel index.
         /// The iteration range is the full image.
         ConstIterator(const ImageBuf& ib, int x_, int y_, int z_ = 0,
                       WrapMode wrap = WrapDefault)
-            : IteratorBase(ib, wrap)
+            : IteratorBase(ib, x_, y_, z_, wrap)
         {
-            pos(x_, y_, z_);
         }
         /// Construct read-only iteration region from ImageBuf and ROI.
         ConstIterator(const ImageBuf& ib, const ROI& roi,
                       WrapMode wrap = WrapDefault)
             : IteratorBase(ib, roi, wrap)
         {
-            pos(m_rng_xbegin, m_rng_ybegin, m_rng_zbegin);
-            if (m_rng_xbegin == m_rng_xend || m_rng_ybegin == m_rng_yend
-                || m_rng_zbegin == m_rng_zend)
-                pos_done();  // make empty range look "done"
         }
         /// Construct from an ImageBuf and designated region -- iterate
         /// over region, starting with the upper left pixel.
@@ -1595,29 +1539,9 @@ public:
                       WrapMode wrap = WrapDefault)
             : IteratorBase(ib, xbegin, xend, ybegin, yend, zbegin, zend, wrap)
         {
-            pos(m_rng_xbegin, m_rng_ybegin, m_rng_zbegin);
-            if (m_rng_xbegin == m_rng_xend || m_rng_ybegin == m_rng_yend
-                || m_rng_zbegin == m_rng_zend)
-                pos_done();  // make empty range look "done"
-        }
-        /// Copy constructor.
-        ///
-        ConstIterator(const ConstIterator& i)
-            : IteratorBase(i)
-        {
-            pos(i.m_x, i.m_y, i.m_z);
         }
 
         ~ConstIterator() {}
-
-        /// Assign one ConstIterator to another
-        ///
-        const ConstIterator& operator=(const ConstIterator& i)
-        {
-            assign_base(i);
-            pos(i.m_x, i.m_y, i.m_z);
-            return *this;
-        }
 
         /// Dereferencing the iterator gives us a proxy for the pixel,
         /// which we can index for reading or assignment.
@@ -1633,19 +1557,6 @@ public:
             ConstDataArrayProxy<BUFT, USERT> proxy((BUFT*)m_proxydata);
             return proxy[i];
         }
-
-        const void* rawptr() const { return m_proxydata; }
-
-        /// Retrieve the deep data value of sample s of channel c.
-        USERT deep_value(int c, int s) const
-        {
-            return convert_type<float, USERT>(
-                m_ib->deep_value(m_x, m_y, m_z, c, s));
-        }
-        uint32_t deep_value_uint(int c, int s) const
-        {
-            return m_ib->deep_value_uint(m_x, m_y, m_z, c, s);
-        }
     };
 
 
@@ -1654,13 +1565,19 @@ protected:
     static void impl_deleter(ImageBufImpl*);
     std::unique_ptr<ImageBufImpl, decltype(&impl_deleter)> m_impl;
 
-    // Reset the ImageCache::Tile * to reserve and point to the correct
+    // Reset the ImageCacheTile* to reserve and point to the correct
     // tile for the given pixel, and return the ptr to the actual pixel
-    // within the tile.
-    const void* retile(int x, int y, int z, ImageCache::Tile*& tile,
+    // within the tile. If any read errors occur, set haderror=true (but
+    // if there are no errors, do not modify haderror).
+    const void* retile(int x, int y, int z, pvt::ImageCacheTile*& tile,
                        int& tilexbegin, int& tileybegin, int& tilezbegin,
-                       int& tilexend, bool exists,
-                       WrapMode wrap = WrapDefault) const;
+                       int& tilexend, bool& haderr, bool exists,
+                       WrapMode wrap) const;
+
+    // DEPRECATED(2.4)
+    const void* retile(int x, int y, int z, pvt::ImageCacheTile*& tile,
+                       int& tilexbegin, int& tileybegin, int& tilezbegin,
+                       int& tilexend, bool exists, WrapMode wrap) const;
 
     const void* blackpixel() const;
 

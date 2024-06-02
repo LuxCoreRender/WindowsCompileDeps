@@ -1,78 +1,46 @@
-///////////////////////////////////////////////////////////////////////////
 //
-// Copyright (c) 2011, Industrial Light & Magic, a division of Lucas
-// Digital Ltd. LLC
+// SPDX-License-Identifier: BSD-3-Clause
+// Copyright (c) Contributors to the OpenEXR Project.
 //
-// All rights reserved.
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-// *       Redistributions of source code must retain the above copyright
-// notice, this list of conditions and the following disclaimer.
-// *       Redistributions in binary form must reproduce the above
-// copyright notice, this list of conditions and the following disclaimer
-// in the documentation and/or other materials provided with the
-// distribution.
-// *       Neither the name of Industrial Light & Magic nor the names of
-// its contributors may be used to endorse or promote products derived
-// from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-//
-///////////////////////////////////////////////////////////////////////////
-
 
 #ifndef IMFDEEPTILEDINPUTPART_H_
 #define IMFDEEPTILEDINPUTPART_H_
 
-#include "ImfDeepTiledInputFile.h"
-#include "ImfNamespace.h"
 #include "ImfForward.h"
-#include "ImfExport.h"
+
+#include "ImfTileDescription.h"
+
+#include <cstdint>
+#include <ImathBox.h>
 
 OPENEXR_IMF_INTERNAL_NAMESPACE_HEADER_ENTER
 
-class DeepTiledInputPart
+class IMF_EXPORT_TYPE DeepTiledInputPart
 {
-  public:
-
+public:
     IMF_EXPORT
-    DeepTiledInputPart(MultiPartInputFile& multiPartFile, int partNumber);
+    DeepTiledInputPart (MultiPartInputFile& multiPartFile, int partNumber);
 
     //------------------------
     // Access to the file name
     //------------------------
 
     IMF_EXPORT
-    const char *        fileName () const;
-
+    const char* fileName () const;
 
     //--------------------------
     // Access to the file header
     //--------------------------
 
     IMF_EXPORT
-    const Header &      header () const;
-
+    const Header& header () const;
 
     //----------------------------------
     // Access to the file format version
     //----------------------------------
 
     IMF_EXPORT
-    int                 version () const;
-
+    int version () const;
 
     //-----------------------------------------------------------
     // Set the current frame buffer -- copies the FrameBuffer
@@ -86,16 +54,14 @@ class DeepTiledInputPart
     //-----------------------------------------------------------
 
     IMF_EXPORT
-    void                setFrameBuffer (const DeepFrameBuffer &frameBuffer);
-
+    void setFrameBuffer (const DeepFrameBuffer& frameBuffer);
 
     //-----------------------------------
     // Access to the current frame buffer
     //-----------------------------------
 
     IMF_EXPORT
-    const DeepFrameBuffer & frameBuffer () const;
-
+    const DeepFrameBuffer& frameBuffer () const;
 
     //------------------------------------------------------------
     // Check if the file is complete:
@@ -108,8 +74,7 @@ class DeepTiledInputPart
     //------------------------------------------------------------
 
     IMF_EXPORT
-    bool                isComplete () const;
-
+    bool isComplete () const;
 
     //--------------------------------------------------
     // Utility functions:
@@ -122,14 +87,13 @@ class DeepTiledInputPart
     //---------------------------------------------------------
 
     IMF_EXPORT
-    unsigned int        tileXSize () const;
+    unsigned int tileXSize () const;
     IMF_EXPORT
-    unsigned int        tileYSize () const;
+    unsigned int tileYSize () const;
     IMF_EXPORT
-    LevelMode           levelMode () const;
+    LevelMode levelMode () const;
     IMF_EXPORT
-    LevelRoundingMode   levelRoundingMode () const;
-
+    LevelRoundingMode levelRoundingMode () const;
 
     //--------------------------------------------------------------------
     // Number of levels:
@@ -175,14 +139,13 @@ class DeepTiledInputPart
     //--------------------------------------------------------------------
 
     IMF_EXPORT
-    int                 numLevels () const;
+    int numLevels () const;
     IMF_EXPORT
-    int                 numXLevels () const;
+    int numXLevels () const;
     IMF_EXPORT
-    int                 numYLevels () const;
+    int numYLevels () const;
     IMF_EXPORT
-    bool                isValidLevel (int lx, int ly) const;
-
+    bool isValidLevel (int lx, int ly) const;
 
     //----------------------------------------------------------
     // Dimensions of a level:
@@ -203,10 +166,9 @@ class DeepTiledInputPart
     //----------------------------------------------------------
 
     IMF_EXPORT
-    int                 levelWidth  (int lx) const;
+    int levelWidth (int lx) const;
     IMF_EXPORT
-    int                 levelHeight (int ly) const;
-
+    int levelHeight (int ly) const;
 
     //--------------------------------------------------------------
     // Number of tiles:
@@ -229,10 +191,9 @@ class DeepTiledInputPart
     //--------------------------------------------------------------
 
     IMF_EXPORT
-    int                 numXTiles (int lx = 0) const;
+    int numXTiles (int lx = 0) const;
     IMF_EXPORT
-    int                 numYTiles (int ly = 0) const;
-
+    int numYTiles (int ly = 0) const;
 
     //---------------------------------------------------------------
     // Level pixel ranges:
@@ -254,10 +215,9 @@ class DeepTiledInputPart
     //---------------------------------------------------------------
 
     IMF_EXPORT
-    IMATH_NAMESPACE::Box2i        dataWindowForLevel (int l = 0) const;
+    IMATH_NAMESPACE::Box2i dataWindowForLevel (int l = 0) const;
     IMF_EXPORT
-    IMATH_NAMESPACE::Box2i        dataWindowForLevel (int lx, int ly) const;
-
+    IMATH_NAMESPACE::Box2i dataWindowForLevel (int lx, int ly) const;
 
     //-------------------------------------------------------------------
     // Tile pixel ranges:
@@ -281,11 +241,11 @@ class DeepTiledInputPart
     //-------------------------------------------------------------------
 
     IMF_EXPORT
-    IMATH_NAMESPACE::Box2i        dataWindowForTile (int dx, int dy, int l = 0) const;
+    IMATH_NAMESPACE::Box2i dataWindowForTile (int dx, int dy, int l = 0) const;
 
     IMF_EXPORT
-    IMATH_NAMESPACE::Box2i        dataWindowForTile (int dx, int dy,
-                                         int lx, int ly) const;
+    IMATH_NAMESPACE::Box2i
+    dataWindowForTile (int dx, int dy, int lx, int ly) const;
 
     //------------------------------------------------------------
     // Read pixel data:
@@ -298,7 +258,7 @@ class DeepTiledInputPart
     //   dy must lie in the interval [0, numYTiles(ly)-1]
     //
     //   lx must lie in the interval [0, numXLevels()-1]
-    //   ly must lie in the inverval [0, numYLevels()-1]
+    //   ly must lie in the interval [0, numYLevels()-1]
     //
     // readTile(dx, dy, level) is a convenience function used
     // for ONE_LEVEL and MIPMAP_LEVELS files.  It calls
@@ -317,18 +277,15 @@ class DeepTiledInputPart
     //------------------------------------------------------------
 
     IMF_EXPORT
-    void                readTile  (int dx, int dy, int l = 0);
+    void readTile (int dx, int dy, int l = 0);
     IMF_EXPORT
-    void                readTile  (int dx, int dy, int lx, int ly);
+    void readTile (int dx, int dy, int lx, int ly);
 
     IMF_EXPORT
-    void                readTiles (int dx1, int dx2, int dy1, int dy2,
-                                 int lx, int ly);
+    void readTiles (int dx1, int dx2, int dy1, int dy2, int lx, int ly);
 
     IMF_EXPORT
-    void                readTiles (int dx1, int dx2, int dy1, int dy2,
-                                 int l = 0);
-
+    void readTiles (int dx1, int dx2, int dy1, int dy2, int l = 0);
 
     //--------------------------------------------------
     // Read a tile of raw pixel data from the file,
@@ -337,11 +294,9 @@ class DeepTiledInputPart
     //--------------------------------------------------
 
     IMF_EXPORT
-    void                rawTileData (int &dx, int &dy,
-                                   int &lx, int &ly,
-                                   char *data,
-                                   Int64 &dataSize
-                                   ) const;
+    void rawTileData (
+        int& dx, int& dy, int& lx, int& ly, char* data, uint64_t& dataSize)
+        const;
 
     //------------------------------------------------------------------
     // Read pixel sample counts into a slice in the frame buffer.
@@ -356,7 +311,7 @@ class DeepTiledInputPart
     // dy must lie in the interval [0, numYTiles(ly)-1]
     //
     // lx must lie in the interval [0, numXLevels()-1]
-    // ly must lie in the inverval [0, numYLevels()-1]
+    // ly must lie in the interval [0, numYLevels()-1]
     //
     // readPixelSampleCounts(dx1, dx2, dy1, dy2, lx, ly) reads all
     // the sample counts for tiles within range
@@ -368,27 +323,23 @@ class DeepTiledInputPart
     //------------------------------------------------------------------
 
     IMF_EXPORT
-    void                readPixelSampleCount  (int dx, int dy, int l = 0);
+    void readPixelSampleCount (int dx, int dy, int l = 0);
     IMF_EXPORT
-    void                readPixelSampleCount  (int dx, int dy, int lx, int ly);
+    void readPixelSampleCount (int dx, int dy, int lx, int ly);
 
     IMF_EXPORT
-    void                readPixelSampleCounts (int dx1, int dx2,
-                                            int dy1, int dy2,
-                                            int lx, int ly);
+    void
+    readPixelSampleCounts (int dx1, int dx2, int dy1, int dy2, int lx, int ly);
 
     IMF_EXPORT
-    void                readPixelSampleCounts (int dx1, int dx2,
-                                            int dy1, int dy2,
-                                            int l = 0);
+    void readPixelSampleCounts (int dx1, int dx2, int dy1, int dy2, int l = 0);
 
-  private:
+private:
     DeepTiledInputFile* file;
 
-    friend void DeepTiledOutputFile::copyPixels(DeepTiledInputPart &);
+    friend class DeepTiledOutputFile;
 };
 
 OPENEXR_IMF_INTERNAL_NAMESPACE_HEADER_EXIT
-
 
 #endif /* IMFDEEPTILEDINPUTPART_H_ */

@@ -1,6 +1,6 @@
-// Copyright 2008-present Contributors to the OpenImageIO project.
-// SPDX-License-Identifier: BSD-3-Clause
-// https://github.com/OpenImageIO/oiio/blob/master/LICENSE.md
+// Copyright Contributors to the OpenImageIO project.
+// SPDX-License-Identifier: Apache-2.0
+// https://github.com/AcademySoftwareFoundation/OpenImageIO
 
 
 #pragma once
@@ -8,6 +8,19 @@
 #include <OpenImageIO/export.h>
 #include <OpenImageIO/oiioversion.h>
 #include <OpenImageIO/strutil.h>
+
+
+// If OIIO_ERRORHANDLER_HIDE_PRINTF is defined, mark the old-style printf-like
+// format functions as deprecated. (This is a debugging aid for downstream
+// projects who want to root out any places where they might be using the old
+// one).
+#if defined(OIIO_ERRORHANDLER_HIDE_PRINTF) || defined(OIIO_INTERNAL)
+#    define OIIO_ERRORHANDLER_PRINTF_DEPRECATED \
+        OIIO_DEPRECATED(                        \
+            "old style (printf-like) formatting version of this function is deprecated")
+#else
+#    define OIIO_ERRORHANDLER_PRINTF_DEPRECATED
+#endif
 
 
 OIIO_NAMESPACE_BEGIN
@@ -27,7 +40,7 @@ OIIO_NAMESPACE_BEGIN
 /// different behavior from the default console output) and make all
 /// error-like output via the ErrorHandler*.
 ///
-class OIIO_API ErrorHandler {
+class OIIO_UTIL_API ErrorHandler {
 public:
     /// Error categories.  We use broad categories in the high order bits.
     /// A library may just use these categories, or may create individual
@@ -81,13 +94,11 @@ public:
     void debug(const std::string&) {}
 #endif
 
-    //
     // Formatted output with the same notation as Strutil::format.
     /// Use with caution! Some day this will change to be fmt-like rather
     /// than printf-like.
-    //
     template<typename... Args>
-    void info(const char* format, const Args&... args)
+    OIIO_FORMAT_DEPRECATED void info(const char* format, const Args&... args)
     {
         if (verbosity() >= VERBOSE)
             info(Strutil::format(format, args...));
@@ -97,7 +108,7 @@ public:
     /// Will not print unless verbosity >= NORMAL (i.e. will suppress
     /// for QUIET).
     template<typename... Args>
-    void warning(const char* format, const Args&... args)
+    OIIO_FORMAT_DEPRECATED void warning(const char* format, const Args&... args)
     {
         if (verbosity() >= NORMAL)
             warning(Strutil::format(format, args...));
@@ -106,7 +117,7 @@ public:
     /// Error message with printf-like formatted error message.
     /// Will print regardless of verbosity.
     template<typename... Args>
-    void error(const char* format, const Args&... args)
+    OIIO_FORMAT_DEPRECATED void error(const char* format, const Args&... args)
     {
         error(Strutil::format(format, args...));
     }
@@ -114,7 +125,7 @@ public:
     /// Severe error message with printf-like formatted error message.
     /// Will print regardless of verbosity.
     template<typename... Args>
-    void severe(const char* format, const Args&... args)
+    OIIO_FORMAT_DEPRECATED void severe(const char* format, const Args&... args)
     {
         severe(Strutil::format(format, args...));
     }
@@ -123,7 +134,7 @@ public:
     /// Will not print if verbosity is QUIET.  Also note that unlike
     /// the other routines, message() will NOT append a newline.
     template<typename... Args>
-    void message(const char* format, const Args&... args)
+    OIIO_FORMAT_DEPRECATED void message(const char* format, const Args&... args)
     {
         if (verbosity() > QUIET)
             message(Strutil::format(format, args...));
@@ -133,8 +144,8 @@ public:
     /// This will not produce any output if not in DEBUG mode, or
     /// if verbosity is QUIET.
     template<typename... Args>
-    void debug(const char* format OIIO_MAYBE_UNUSED,
-               const Args&... args OIIO_MAYBE_UNUSED)
+    OIIO_FORMAT_DEPRECATED void debug(const char* format OIIO_MAYBE_UNUSED,
+                                      const Args&... args OIIO_MAYBE_UNUSED)
     {
 #ifndef NDEBUG
         debug(Strutil::format(format, args...));
@@ -147,41 +158,47 @@ public:
     // in some future OIIO release.
     //
     template<typename... Args>
-    void infof(const char* format, const Args&... args)
+    OIIO_ERRORHANDLER_PRINTF_DEPRECATED void infof(const char* format,
+                                                   const Args&... args)
     {
         if (verbosity() >= VERBOSE)
             info(Strutil::sprintf(format, args...));
     }
 
     template<typename... Args>
-    void warningf(const char* format, const Args&... args)
+    OIIO_ERRORHANDLER_PRINTF_DEPRECATED void warningf(const char* format,
+                                                      const Args&... args)
     {
         if (verbosity() >= NORMAL)
             warning(Strutil::sprintf(format, args...));
     }
 
     template<typename... Args>
-    void errorf(const char* format, const Args&... args)
+    OIIO_ERRORHANDLER_PRINTF_DEPRECATED void errorf(const char* format,
+                                                    const Args&... args)
     {
         error(Strutil::sprintf(format, args...));
     }
 
     template<typename... Args>
-    void severef(const char* format, const Args&... args)
+    OIIO_ERRORHANDLER_PRINTF_DEPRECATED void severef(const char* format,
+                                                     const Args&... args)
     {
         severe(Strutil::sprintf(format, args...));
     }
 
     template<typename... Args>
-    void messagef(const char* format, const Args&... args)
+    OIIO_ERRORHANDLER_PRINTF_DEPRECATED void messagef(const char* format,
+                                                      const Args&... args)
     {
         if (verbosity() > QUIET)
             message(Strutil::sprintf(format, args...));
     }
 
     template<typename... Args>
-    void debugf(const char* format OIIO_MAYBE_UNUSED,
-                const Args&... args OIIO_MAYBE_UNUSED)
+    OIIO_ERRORHANDLER_PRINTF_DEPRECATED void
+    debugf(const char* format OIIO_MAYBE_UNUSED,
+           const Args&... args OIIO_MAYBE_UNUSED)
     {
 #ifndef NDEBUG
         debug(Strutil::sprintf(format, args...));

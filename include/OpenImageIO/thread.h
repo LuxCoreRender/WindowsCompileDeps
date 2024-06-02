@@ -1,6 +1,6 @@
-// Copyright 2008-present Contributors to the OpenImageIO project.
-// SPDX-License-Identifier: BSD-3-Clause
-// https://github.com/OpenImageIO/oiio/blob/master/LICENSE.md
+// Copyright Contributors to the OpenImageIO project.
+// SPDX-License-Identifier: Apache-2.0
+// https://github.com/AcademySoftwareFoundation/OpenImageIO
 
 // clang-format off
 
@@ -84,21 +84,16 @@ using std::recursive_mutex;
 using std::thread;
 typedef std::lock_guard<mutex> lock_guard;
 typedef std::lock_guard<recursive_mutex> recursive_lock_guard;
+typedef std::lock_guard<std::recursive_timed_mutex> recursive_timed_lock_guard;
 
 
 
 /// Yield the processor for the rest of the timeslice.
-///
+/// DEPRECATED(2.4): Use std::this_thread::yield() instead.
 inline void
 yield() noexcept
 {
-#if defined(__GNUC__)
-    sched_yield();
-#elif defined(_MSC_VER)
-    SwitchToThread();
-#else
-#    error No yield on this platform.
-#endif
+    std::this_thread::yield();
 }
 
 
@@ -117,11 +112,19 @@ pause(int delay) noexcept
 
 #elif defined(_MSC_VER)
     for (int i = 0; i < delay; ++i) {
-#    if defined(_WIN64)
-        YieldProcessor();
-#    else
+        // A reimplementation of winnt.h YieldProcessor,
+        // to avoid including windows headers.
+        #if defined(_M_AMD64)
+        _mm_pause();
+        #elif defined(_M_ARM64) || defined(_M_HYBRID_X86_ARM64)
+        __dmb(_ARM64_BARRIER_ISHST);
+        __yield();
+        #elif defined(_M_ARM)
+        __dmb(_ARM_BARRIER_ISHST);
+        __yield();
+        #else
         _asm pause
-#    endif /* _WIN64 */
+        #endif
     }
 
 #else
@@ -148,7 +151,7 @@ public:
             pause(m_count);
             m_count *= 2;
         } else {
-            yield();
+            std::this_thread::yield();
         }
     }
 
@@ -647,7 +650,7 @@ private:
 ///
 /// Thread pool. Have fun, be safe.
 ///
-class OIIO_API thread_pool {
+class OIIO_UTIL_API thread_pool {
 public:
     /// Initialize the pool.  This implicitly calls resize() to set the
     /// number of worker threads, defaulting to a number of workers that is
@@ -767,10 +770,18 @@ private:
 
 
 /// Return a reference to the "default" shared thread pool. In almost all
-/// ordinary circumstances, you should use this exclusively to get a
-/// single shared thread pool, since creating multiple thread pools
-/// could result in hilariously over-threading your application.
-OIIO_API thread_pool* default_thread_pool ();
+/// ordinary circumstances, you should use this exclusively to get a single
+/// shared thread pool, since creating multiple thread pools could result in
+/// hilariously over-threading your application. Note that this call may
+/// (safely, and only once) trigger creation of the thread pool and its
+/// worker threads if it has not yet been created.
+OIIO_UTIL_API thread_pool* default_thread_pool();
+
+/// If a thread pool has been created, this call will safely terminate its
+/// worker threads. This should presumably be called by an application
+/// immediately before it exists, when it is confident the thread pool will
+/// no longer be needed.
+OIIO_UTIL_API void default_thread_pool_shutdown();
 
 
 
@@ -793,7 +804,7 @@ OIIO_API thread_pool* default_thread_pool ();
 ///        // wait for all those queue tasks to finish.
 ///    }
 ///
-class OIIO_API task_set {
+class OIIO_UTIL_API task_set {
 public:
     task_set(thread_pool* pool = nullptr)
         : m_pool(pool ? pool : default_thread_pool())

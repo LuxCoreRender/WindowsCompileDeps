@@ -1,6 +1,6 @@
-// Copyright 2008-present Contributors to the OpenImageIO project.
-// SPDX-License-Identifier: BSD-3-Clause
-// https://github.com/OpenImageIO/oiio/blob/master/LICENSE.md
+// Copyright Contributors to the OpenImageIO project.
+// SPDX-License-Identifier: Apache-2.0
+// https://github.com/AcademySoftwareFoundation/OpenImageIO
 
 
 #pragma once
@@ -44,7 +44,7 @@ template<> struct is_string<std::string> : std::true_type {};
 // to work as a shorthand for extracting the named attribute via
 // object.getattribute() and assigning it to the result.
 //
-// Basically, the class in question needs to posess these three methods,
+// Basically, the class in question needs to possess these three methods,
 // working in the usual idiomatic way for OIIO:
 //
 //      void attribute (string_view name, TypeDesc type, void* data);
@@ -73,7 +73,7 @@ template<> struct is_string<std::string> : std::true_type {};
 //         int i = obj["foo"].get<int>();
 //         float f = obj["bar"].get<float>();
 //         std::string s = obj["baz"].get<std::string>();
-//    If the object does not posess an attribute of that name (and/or of
+//    If the object does not possess an attribute of that name (and/or of
 //    that type), it will instead return the default value for that type.
 //    A specific default value override may be provided as an argument to
 //    the get() method:

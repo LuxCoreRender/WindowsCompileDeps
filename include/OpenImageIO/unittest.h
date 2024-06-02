@@ -1,6 +1,6 @@
-// Copyright 2008-present Contributors to the OpenImageIO project.
-// SPDX-License-Identifier: BSD-3-Clause
-// https://github.com/OpenImageIO/oiio/blob/master/LICENSE.md
+// Copyright Contributors to the OpenImageIO project.
+// SPDX-License-Identifier: Apache-2.0
+// https://github.com/AcademySoftwareFoundation/OpenImageIO
 
 #pragma once
 
@@ -44,7 +44,9 @@ public:
             std::cout << Sysutil::Term(std::cout).ansi("red", "ERRORS!\n");
             std::exit(m_failures != 0);
         } else {
+#ifndef OIIO_UNIT_TEST_QUIET_SUCCESS
             std::cout << Sysutil::Term(std::cout).ansi("green", "OK\n");
+#endif
         }
     }
     const UnitTestFailureCounter& operator++() noexcept  // prefix
@@ -117,8 +119,22 @@ static OIIO::pvt::UnitTestFailureCounter unit_test_failures;
                        << "'\n"),                                             \
             (void)++unit_test_failures))
 
+#define OIIO_CHECK_FALSE(x) OIIO_CHECK_EQUAL(x, false)
+
 #define OIIO_CHECK_EQUAL_THRESH(x, y, eps)                                    \
     ((std::abs((x) - (y)) <= eps)                                             \
+         ? ((void)0)                                                          \
+         : ((std::cout << OIIO::Sysutil::Term(std::cout).ansi("red,bold")     \
+                       << __FILE__ << ":" << __LINE__ << ":\n"                \
+                       << "FAILED: "                                          \
+                       << OIIO::Sysutil::Term(std::cout).ansi("normal") << #x \
+                       << " == " << #y << "\n"                                \
+                       << "\tvalues were '" << (x) << "' and '" << (y) << "'" \
+                       << ", diff was " << std::abs((x) - (y)) << "\n"),      \
+            (void)++unit_test_failures))
+
+#define OIIO_CHECK_EQUAL_THRESH_REL(x, y, epsabs, epsrel)                     \
+    ((std::abs((x) - (y)) <= (epsabs + epsrel * std::max(abs(x), abs(y))))    \
          ? ((void)0)                                                          \
          : ((std::cout << OIIO::Sysutil::Term(std::cout).ansi("red,bold")     \
                        << __FILE__ << ":" << __LINE__ << ":\n"                \
@@ -216,7 +232,7 @@ static OIIO::pvt::UnitTestFailureCounter unit_test_failures;
             (void)++unit_test_failures))
 
 #define OIIO_CHECK_SIMD_EQUAL_THRESH(x, y, eps)                               \
-    (all(abs((x) - (y)) < (eps))                                              \
+    (all(abs((x) - (y)) <= (eps))                                             \
          ? ((void)0)                                                          \
          : ((std::cout << OIIO::Sysutil::Term(std::cout).ansi("red,bold")     \
                        << __FILE__ << ":" << __LINE__ << ":\n"                \

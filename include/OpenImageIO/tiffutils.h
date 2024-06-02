@@ -1,6 +1,6 @@
-// Copyright 2008-present Contributors to the OpenImageIO project.
-// SPDX-License-Identifier: BSD-3-Clause
-// https://github.com/OpenImageIO/oiio/blob/master/LICENSE.md
+// Copyright Contributors to the OpenImageIO project.
+// SPDX-License-Identifier: Apache-2.0
+// https://github.com/AcademySoftwareFoundation/OpenImageIO
 
 // clang-format off
 
@@ -161,6 +161,8 @@ tiff_dir_data (const TIFFDirEntry &td, cspan<uint8_t> data);
 /// start with a TIFF directory header.
 OIIO_API bool decode_exif (cspan<uint8_t> exif, ImageSpec &spec);
 OIIO_API bool decode_exif (string_view exif, ImageSpec &spec);
+
+OIIO_DEPRECATED("use version that takes a cspan<> (1.8)")
 OIIO_API bool decode_exif (const void *exif, int length, ImageSpec &spec); // DEPRECATED (1.8)
 
 /// Construct an Exif data block from the ImageSpec, appending the Exif
@@ -214,6 +216,16 @@ OIIO_API bool decode_xmp (const std::string& xml, ImageSpec &spec);
 /// plugin.  If 'minimal' is true, then don't encode things that would
 /// be part of ordinary TIFF or exif tags.
 OIIO_API std::string encode_xmp (const ImageSpec &spec, bool minimal=false);
+
+
+/// Add metadata to spec based on ICC data in a byte array.  Return true if
+/// all is ok, false if the ICC was somehow malformed (and in that case, set
+/// the contents of `error` to something useful).  This is a utility function
+/// to make it easy for multiple format plugins to support embedding ICC
+/// metadata without having to duplicate functionality within each plugin.
+OIIO_API bool decode_icc_profile(cspan<uint8_t> iccdata, ImageSpec& spec,
+                                 std::string& error);
+
 
 
 /// Handy structure to hold information mapping TIFF/EXIF tags to their

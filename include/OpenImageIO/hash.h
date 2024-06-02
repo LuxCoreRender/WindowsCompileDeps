@@ -1,6 +1,6 @@
-// Copyright 2008-present Contributors to the OpenImageIO project.
-// SPDX-License-Identifier: BSD-3-Clause
-// https://github.com/OpenImageIO/oiio/blob/master/LICENSE.md
+// Copyright Contributors to the OpenImageIO project.
+// SPDX-License-Identifier: Apache-2.0
+// https://github.com/AcademySoftwareFoundation/OpenImageIO
 
 // clang-format off
 
@@ -20,7 +20,6 @@
 #include <utility>
 #include <vector>
 
-#include <OpenImageIO/span.h>
 #include <OpenImageIO/export.h>
 #include <OpenImageIO/oiioversion.h>
 #include <OpenImageIO/string_view.h>
@@ -31,6 +30,7 @@
 #    include <OpenImageIO/fmath.h>
 #endif
 
+#include <OpenImageIO/span.h>
 
 
 OIIO_NAMESPACE_BEGIN
@@ -80,7 +80,12 @@ inline uint64_t fasthash64(const void *buf, size_t len, uint64_t seed=1771)
 	uint64_t v;
 
 	while (pos != end) {
+		// This appears to be a false positive which only affects GCC.
+		// https://godbolt.org/z/5q7Y7ndfb
+		OIIO_PRAGMA_WARNING_PUSH
+		OIIO_GCC_ONLY_PRAGMA(GCC diagnostic ignored "-Wmaybe-uninitialized")
 		v  = *pos++;
+		OIIO_PRAGMA_WARNING_PUSH
 		h ^= mix(v);
 		h *= m;
 	}
@@ -575,6 +580,11 @@ public:
 
     /// Append more data
     void append (const void *data, size_t size);
+
+    /// Append more data from a string_view
+    void append (string_view s) {
+        append(s.data(), s.size());
+    }
 
     /// Append more data from a span, without thinking about sizes.
     template<class T> void append (span<T> v) {

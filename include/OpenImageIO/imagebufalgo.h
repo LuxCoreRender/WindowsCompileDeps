@@ -1,6 +1,6 @@
-// Copyright 2008-present Contributors to the OpenImageIO project.
-// SPDX-License-Identifier: BSD-3-Clause
-// https://github.com/OpenImageIO/oiio/blob/master/LICENSE.md
+// Copyright Contributors to the OpenImageIO project.
+// SPDX-License-Identifier: Apache-2.0
+// https://github.com/AcademySoftwareFoundation/OpenImageIO
 
 
 // clang-format off
@@ -19,6 +19,7 @@
 #include <OpenImageIO/fmath.h>
 #include <OpenImageIO/parallel.h>
 #include <OpenImageIO/span.h>
+#include <OpenImageIO/vecparam.h>
 
 #include <limits>
 
@@ -105,7 +106,7 @@ class Filter2D;
 /// `dst` parameter that is an uninitialized ImageBuf, the ROI (if set)
 /// determines the size of the result image. If the ROI is the default
 /// `All`, the result image size will be the union of the pixel data windows
-/// of the input images and have a data type determind by the data types of
+/// of the input images and have a data type determined by the data types of
 /// the input images.
 ///
 /// Most ImageBufAlgo functions also respect the `chbegin` and `chend`
@@ -162,8 +163,12 @@ public:
     Image_or_Const (cspan<float> val) : m_type(VAL), m_val(val) {}
     Image_or_Const (const float& val) : m_type(VAL), m_val(val) {}
     Image_or_Const (const std::vector<float>& val) : m_type(VAL), m_val(val) {}
+    Image_or_Const (std::initializer_list<const float> val) : m_type(VAL), m_val(val) {}
     Image_or_Const (const float *v, size_t s) : m_type(VAL), m_val(v,s) {}
     Image_or_Const (const float *v, int s) : m_type(VAL), m_val(v,s) {}
+
+    template<size_t N>
+    Image_or_Const(const float (&array)[N]) : Image_or_Const(cspan<float>(array)) {}
 
     bool is_img () const { return m_type == IMG; }
     bool is_val () const { return m_type == VAL; }
@@ -190,6 +195,7 @@ private:
 namespace ImageBufAlgo {
 
 // old name (DEPRECATED 1.9)
+OIIO_DEPRECATED("use parallel_options (1.9)")
 typedef parallel_options parallel_image_options;
 
 
@@ -253,7 +259,12 @@ bool OIIO_API checker (ImageBuf &dst, int width, int height, int depth,
 ///
 /// - "gaussian"   adds Gaussian (normal distribution) noise values with
 ///                   mean value A and standard deviation B.
-/// - "uniform"    adds noise values uniformly distributed on range [A,B).
+/// - "white"      adds independent uniformly distributed values on range
+///                [A,B).
+/// - "uniform"    (synonym for "white")
+/// - "blue"       adds "blue noise" uniformly distributed on range [A,B) but
+///                not independent; rather, they are chosen for good spectral
+///                properties for sampling and dither.
 /// - "salt"       changes to value A a portion of pixels given by B.
 ///
 /// If the `mono` flag is true, a single noise value will be applied to all
@@ -273,6 +284,13 @@ ImageBuf OIIO_API noise (string_view noisetype,
 bool OIIO_API noise (ImageBuf &dst, string_view noisetype,
                      float A = 0.0f, float B = 0.1f, bool mono = false,
                      int seed = 0, ROI roi={}, int nthreads=0);
+
+
+/// Return a const reference to a periodic bluenoise texture with float data
+/// in 4 channels that are uncorrelated to each other. Note that unlike most
+/// other ImageBufAlgo functions, it does not return an ImageBuf by value, but
+/// by const reference.
+OIIO_API const ImageBuf& bluenoise_image();
 
 
 /// Render a single point at (x,y) of the given color "over" the existing
@@ -322,7 +340,8 @@ enum class TextAlignY { Baseline, Top, Bottom, Center };
 /// @param x/y
 ///             The position to place the text.
 /// @param text
-///             The text to draw.
+///             The text to draw. Linefeed (`\n`) characters are respected
+///             as indications that the text spans multiple rows.
 /// @param fontsize/fontname
 ///             Size and name of the font. If the name is not a full
 ///             pathname to a font file, it will search for a matching font,
@@ -346,6 +365,15 @@ enum class TextAlignY { Baseline, Top, Bottom, Center };
 ///             make the text look more clear by dilating the alpha channel
 ///             of the composite (makes a black halo around the characters).
 ///
+/// Note that any named fonts (if not a full pathname) will search for the
+/// fonts in the following places: (a) any directories named in the global
+/// "font_searchpath" attribute or the `$OPENIMAGEIO_FONTS` environment
+/// variable; (b) any font-related subdirectories (`fonts`, `Fonts`,
+/// `share/fonts`, or `Library/Fonts`) underneath the directories in
+/// environment variables `$HOME`, `$SystemRoot`, `$OpenImageIO_ROOT`; (c) a
+/// number of common system font areas, including `/usr/share/fonts`,
+/// `/Library/fonts`, and `C:/Windows/fonts`; (d) in fonts directories one
+/// level up from the place where the currently running binary lives.
 bool OIIO_API render_text (ImageBuf &dst, int x, int y, string_view text,
                            int fontsize=16, string_view fontname="",
                            cspan<float> textcolor = 1.0f,
@@ -360,13 +388,15 @@ bool OIIO_API render_text (ImageBuf &dst, int x, int y, string_view text,
 /// be used. The x dimension runs from left to right, and y runs from top to
 /// bottom (image coordinates). For a failure (such as an invalid font
 /// name), the ROI will return `false` if you call its `defined()` method.
+/// The `text` may contain linefeed characters to designate multiple lines
+/// of text.
 ROI OIIO_API text_size (string_view text, int fontsize=16,
                         string_view fontname="");
 
 
 /// Generic channel shuffling: return (or store in `dst`) a copy of `src`,
 /// but with channels in the order `channelorder[0..nchannels-1]` (or set to
-/// a constant value, designated by `channelorder[0] = -1` and having the
+/// a constant value, designated by `channelorder[i] = -1` and having the
 /// fill value in `channelvalues[i]`. In-place operation is allowed (i.e.,
 /// `dst` and `src` the same image, but an extra copy will occur).
 ///
@@ -380,9 +410,11 @@ ROI OIIO_API text_size (string_view text, int fontsize=16,
 ///             `channelvalues[i]` rather than copy any channel from `src`.
 ///             If `channelorder` itself is empty, the implied channel order
 ///             will be `{0, 1, ..., nchannels-1}`, meaning that it's only
-///             renaming channels, not reordering them.
+///             renaming, truncating, or extending channels, not reordering
+///             the channels that are already present.
 /// @param  channelvalues Fill values for color channels in which
-///             `channelorder[i]` < 0.
+///             `channelorder[i]` < 0. This can be empty if no channels are
+///             to be filled with constant values.
 /// @param  newchannelnames
 ///             An array of new channel names. Channels for which this
 ///             specifies an empty string will have their name taken from
@@ -391,12 +423,11 @@ ROI OIIO_API text_size (string_view text, int fontsize=16,
 ///             `src`.
 /// @param  shuffle_channel_names
 ///             If true, the channel names will be taken from the
-///             corresponding channels of the source image -- be careful
-///             with this, shuffling both channel ordering and their names
-///             could result in no semantic change at all, if you catch the
-///             drift. If false (the default), If false, the resulting `dst`
-///             image will have default channel names in the usual order
-///             ("R", "G", etc.), but i
+///             corresponding channels of the source image -- be careful with
+///             this, shuffling both channel ordering and their names could
+///             result in no semantic change at all, if you catch the drift.
+///             If false (the default), the resulting `dst` image will have
+///             default channel names in the usual order ("R", "G", etc.).
 ///
 ImageBuf OIIO_API channels (const ImageBuf &src,
                         int nchannels, cspan<int> channelorder,
@@ -648,6 +679,9 @@ bool OIIO_API resize (ImageBuf &dst, const ImageBuf &src, Filter2D *filter,
 /// For "deep" images, this function returns copies the closest source pixel
 /// needed, rather than attempting to interpolate deep pixels (regardless of
 /// the value of `interpolate`).
+///
+/// @see ImageBufAlgo::resize()
+
 ImageBuf OIIO_API resample (const ImageBuf &src, bool interpolate = true,
                         ROI roi={}, int nthreads=0);
 /// Write to an existing image `dst` (allocating if it is uninitialized).
@@ -660,9 +694,22 @@ bool OIIO_API resample (ImageBuf &dst, const ImageBuf &src,
 ///
 /// Fit src into `dst` (to a size specified by `roi`, if `dst` is not
 /// initialized), resizing but preserving its original aspect ratio. Thus,
-/// it will resize so be the largest size with the same aspect ratio that
-/// can fix inside the region, but will not stretch to completely fill it in
+/// it will resize to be the largest size with the same aspect ratio that
+/// can fit inside the region, but will not stretch to completely fill it in
 /// both dimensions.
+///
+/// The `fillmode` determines which of several methods will be used to
+/// determine how the image will fill the new frame, if its aspect ratio
+/// does not precisely match the original source aspect ratio:
+///     - "width" exactly fills the width of the new frame, either cropping
+///       or letterboxing the height if it isn't precisely the right size to
+///       preserve the original aspect ratio.
+///     - "height" exactly fills the height of the new frame, either cropping
+///       or letterboxing the width if it isn't precisely the right size to
+///       preserve the original aspect ratio.
+///     - "letterbox" (the default) chooses whichever of "width" or "height"
+///       will maximally fill the new frame with no image data lost (it will
+///       only letterbox, never crop).
 ///
 /// If `exact` is true, will result in an exact match on aspect ratio and
 /// centering (partial pixel shift if necessary), whereas exact=false
@@ -680,14 +727,32 @@ bool OIIO_API resample (ImageBuf &dst, const ImageBuf &src,
 ///
 ImageBuf OIIO_API fit (const ImageBuf &src,
                        string_view filtername = "", float filterwidth=0.0f,
-                       bool exact=false, ROI roi={}, int nthreads=0);
+                       string_view fillmode="letterbox", bool exact=false,
+                       ROI roi={}, int nthreads=0);
 ImageBuf OIIO_API fit (const ImageBuf &src, Filter2D *filter,
-                       bool exact=false, ROI roi={}, int nthreads=0);
+                       string_view fillmode="letterbox", bool exact=false,
+                       ROI roi={}, int nthreads=0);
 bool OIIO_API fit (ImageBuf &dst, const ImageBuf &src,
                    string_view filtername = "", float filterwidth=0.0f,
-                   bool exact=false, ROI roi={}, int nthreads=0);
+                   string_view fillmode="letterbox", bool exact=false,
+                   ROI roi={}, int nthreads=0);
 bool OIIO_API fit (ImageBuf &dst, const ImageBuf &src, Filter2D *filter,
-                   bool exact=false, ROI roi={}, int nthreads=0);
+                   string_view fillmode="letterbox", bool exact=false,
+                   ROI roi={}, int nthreads=0);
+
+#ifndef DOXYGEN_SHOULD_SKIP_THIS
+// DEPRECATED(2.3): old versions lacking the "fillmode" parameter
+ImageBuf OIIO_API fit (const ImageBuf &src,
+                       string_view filtername, float filterwidth,
+                       bool exact, ROI roi={}, int nthreads=0);
+ImageBuf OIIO_API fit (const ImageBuf &src, Filter2D *filter,
+                       bool exact, ROI roi={}, int nthreads=0);
+bool OIIO_API fit (ImageBuf &dst, const ImageBuf &src,
+                   string_view filtername, float filterwidth,
+                   bool exact, ROI roi={}, int nthreads=0);
+bool OIIO_API fit (ImageBuf &dst, const ImageBuf &src, Filter2D *filter,
+                   bool exact, ROI roi={}, int nthreads=0);
+#endif
 /// @}
 
 
@@ -710,24 +775,107 @@ bool OIIO_API fit (ImageBuf &dst, const ImageBuf &src, Filter2D *filter,
 /// `dst` pixel; the filter's size is expressed in pixel units of the `dst`
 /// image.
 
-ImageBuf OIIO_API warp (const ImageBuf &src, const Imath::M33f &M,
+ImageBuf OIIO_API warp (const ImageBuf &src, M33fParam M,
                         string_view filtername = string_view(),
                         float filterwidth = 0.0f, bool recompute_roi = false,
                         ImageBuf::WrapMode wrap = ImageBuf::WrapDefault,
                         ROI roi={}, int nthreads=0);
-ImageBuf OIIO_API warp (const ImageBuf &src, const Imath::M33f &M,
+ImageBuf OIIO_API warp (const ImageBuf &src, M33fParam M,
                         const Filter2D *filter, bool recompute_roi = false,
                         ImageBuf::WrapMode wrap = ImageBuf::WrapDefault,
                         ROI roi = {}, int nthreads=0);
-bool OIIO_API warp (ImageBuf &dst, const ImageBuf &src, const Imath::M33f &M,
+bool OIIO_API warp (ImageBuf &dst, const ImageBuf &src, M33fParam M,
                     string_view filtername = string_view(),
                     float filterwidth = 0.0f, bool recompute_roi = false,
                     ImageBuf::WrapMode wrap = ImageBuf::WrapDefault,
                     ROI roi={}, int nthreads=0);
-bool OIIO_API warp (ImageBuf &dst, const ImageBuf &src, const Imath::M33f &M,
+bool OIIO_API warp (ImageBuf &dst, const ImageBuf &src, M33fParam M,
                     const Filter2D *filter, bool recompute_roi = false,
                     ImageBuf::WrapMode wrap = ImageBuf::WrapDefault,
                     ROI roi = {}, int nthreads=0);
+
+#ifdef OIIO_INTERNAL  /* experimental -- not part of public API yet */
+ImageBuf OIIO_API warp (const ImageBuf &src, M33fParam M,
+                        string_view filtername,
+                        float filterwidth, bool recompute_roi,
+                        ImageBuf::WrapMode wrap, bool edgeclamp,
+                        ROI roi={}, int nthreads=0);
+ImageBuf OIIO_API warp (const ImageBuf &src, M33fParam M,
+                        const Filter2D *filter, bool recompute_roi,
+                        ImageBuf::WrapMode wrap, bool edgeclamp,
+                        ROI roi = {}, int nthreads=0);
+bool OIIO_API warp (ImageBuf &dst, const ImageBuf &src, M33fParam M,
+                    string_view filtername,
+                    float filterwidth, bool recompute_roi,
+                    ImageBuf::WrapMode wrap, bool edgeclamp,
+                    ROI roi={}, int nthreads=0);
+bool OIIO_API warp (ImageBuf &dst, const ImageBuf &src, M33fParam M,
+                    const Filter2D *filter, bool recompute_roi,
+                    ImageBuf::WrapMode wrap, bool edgeclamp,
+                    ROI roi = {}, int nthreads=0);
+#endif  // OIIO_INTERNAL
+/// @}
+
+
+/// @defgroup st_warp (st_warp: warp an image using per-pixel st coordinates)
+/// @{
+///
+/// Warp the `src` image using "st" coordinates from a secondary `stbuf` image.
+///
+/// Each pixel in the `stbuf` image is used as a normalized image-space
+/// coordinate in the `src` image, which is then sampled at that position using
+/// the given reconstruction filter to produce an output pixel.
+///
+/// The transform is only defined over the area of the `stbuf` image, and thus
+/// the given `roi` argument will be intersected with its geometry.
+///
+/// \b NOTE: The current behavior of this transform is modeled to match Nuke's
+/// STMap node.
+///
+/// @param dst
+///             The output ImageBuf. If an initialized buffer is provided, its
+///             full-size dimensions must match those of `stbuf`.
+/// @param src
+///             The source ImageBuf to warp.
+/// @param stbuf
+///             The ImageBuf holding the st coordinates. This must be holding
+///             a floating-point pixel data type.
+/// @param chan_s
+///             The index of the "s" channel in the `stbuf` image. This defaults
+///             to its first channel.
+/// @param chan_t
+///             The index of the "t" channel in the `stbuf` image. This defaults
+///             to its second channel.
+/// @param flip_s
+///             Whether to mirror the "s" coordinate along the horizontal axis
+///             when computing source pixel positions. This is useful if the
+///             coordinates are defined in terms of a different image origin 
+///             than OpenImageIO's.
+/// @param flip_t
+///             Whether to mirror the "t" coordinate along the vertical axis
+///             when computing source pixel positions. This is useful if the
+///             coordinates are defined in terms of a different image origin 
+///             than OpenImageIO's.
+
+ImageBuf OIIO_API st_warp (const ImageBuf &src, const ImageBuf& stbuf,
+                           string_view filtername=string_view(),
+                           float filterwidth=0.0f, int chan_s=0, int chan_t=1,
+                           bool flip_s=false, bool flip_t=false, ROI roi={},
+                           int nthreads=0);
+ImageBuf OIIO_API st_warp (const ImageBuf &src, const ImageBuf& stbuf,
+                           const Filter2D *filter, int chan_s=0, int chan_t=1,
+                           bool flip_s=false, bool flip_t=false, ROI roi={},
+                           int nthreads=0);
+bool OIIO_API st_warp (ImageBuf &dst, const ImageBuf &src,
+                       const ImageBuf& stbuf,
+                       string_view filtername=string_view(),
+                       float filterwidth=0.0f, int chan_s=0, int chan_t=1,
+                       bool flip_s=false, bool flip_t=false, ROI roi={},
+                       int nthreads=0);
+bool OIIO_API st_warp (ImageBuf &dst, const ImageBuf &src,
+                       const ImageBuf& stbuf, const Filter2D *filter,
+                       int chan_s=0, int chan_t=1, bool flip_s=false,
+                       bool flip_t=false, ROI roi={}, int nthreads=0);
 /// @}
 
 
@@ -880,6 +1028,38 @@ ImageBuf OIIO_API pow (const ImageBuf &A, cspan<float> B,
 bool OIIO_API pow (ImageBuf &dst, const ImageBuf &A, cspan<float> B,
                    ROI roi={}, int nthreads=0);
 
+/// Normalize a 3D vector texture (i.e., divide each pixel by its length).
+/// This function assumes a 3-channel image that represents a 3-vector, or a
+/// 4-channel image that represents a 3-vector plus an alpha value. If an
+/// alpha channel is present, its value is merely copied, and is not part of
+/// the normalization computation. If the destination has no alpha channel but
+/// the sources do, the alpha channel will be dropped.
+///
+/// `inCenter` and `outCenter` define the pixel value that corresponds to a
+/// 0.0 vector value for input and output, respectively.  `scale` defines the
+/// scale factor to apply to the normalized vectors.
+///
+/// Thus, if the input image encodes vector components into [0,1] range pixel
+/// values so that a pixel value 0.5 indicates a 0-length vector, then you
+/// should use `inCenter=0.5`, whereas if they are already using the full
+/// range (0.0 is encoded as 0.0), then you want `inCenter=0.0`. Similarly, if
+/// you want the output normalized vectors to be in the range [0,1], use
+/// `outCenter=0.5` and `scale=0.5`, but if you want them to be in the range
+/// [-1,1], use `outCenter=0.0` and `scale=1.0` (this probably will only work
+/// if you intend to write the results in `float` or `half` format).
+///
+/// Expressed another way, the computation is conceptually:
+///
+///     out = outCenter + scale * (in - inCenter) / length(in - inCenter)
+/// 
+bool OIIO_API normalize(ImageBuf& dst, const ImageBuf& A, float inCenter=0.0f,
+                        float outCenter=0.0f, float scale=1.0f,
+                        ROI roi={}, int nthreads=0);
+
+ImageBuf OIIO_API normalize(const ImageBuf& A, float inCenter=0.0f,
+                            float outCenter=0.0, float scale=1.0f, 
+                            ROI roi={}, int nthreads=0);
+
 
 /// Converts a multi-channel image into a one-channel image via a weighted
 /// sum of channels:
@@ -894,6 +1074,16 @@ ImageBuf OIIO_API channel_sum (const ImageBuf &src, cspan<float> weights=1.0f,
 bool OIIO_API channel_sum (ImageBuf &dst, const ImageBuf &src,
                            cspan<float> weights=1.0f,
                            ROI roi={}, int nthreads=0);
+
+
+/// @defgroup maxminclamp (Maximum, minimum, clamping)
+/// @{
+///
+/// `max()` and `min()` take the pixel-by-pixel, channel-by-channel
+/// maximum and minimum of two images, or of an image and a constant.
+///
+/// `clamp()` restricts values of an image to the range between per-channel
+/// minimum and maximum constant values.
 
 
 /// Compute per-pixel `max(A, B)`, returning the result image.
@@ -921,12 +1111,15 @@ bool OIIO_API min (ImageBuf &dst, Image_or_Const A, Image_or_Const B,
 
 
 /// Return pixels of `src` with pixel values clamped as follows:
-/// * `min` specifies the minimum clamp value for each channel
-///   (if min is empty, no minimum clamping is performed).
-/// * `max` specifies the maximum clamp value for each channel
-///   (if `max` is empty, no maximum clamping is performed).
-/// * If `clampalpha01` is true, then additionally any alpha channel is
-///   clamped to the 0-1 range.
+/// @param min
+///              The minimum clamp value for each channel. If `min` is
+///              empty, no minimum clamping is performed.
+/// @param max
+///              The maximum clamp value for each channel. If `max` is
+///              empty, no maximum clamping is performed.
+/// @param clampalpha01
+///              If true, then additionally any alpha channel is clamped
+///              to the 0-1 range.
 ImageBuf OIIO_API clamp (const ImageBuf &src,
                          cspan<float> min=-std::numeric_limits<float>::max(),
                          cspan<float> max=std::numeric_limits<float>::max(),
@@ -936,6 +1129,27 @@ bool OIIO_API clamp (ImageBuf &dst, const ImageBuf &src,
                      cspan<float> min=-std::numeric_limits<float>::max(),
                      cspan<float> max=std::numeric_limits<float>::max(),
                      bool clampalpha01 = false, ROI roi={}, int nthreads=0);
+
+/// @}
+
+
+/// @defgroup maxminchan (Maximum / minimum of channels)
+/// @{
+///
+/// `maxchan()` computes a one-channel image that for each pixel, contains the
+/// maximum value of all channels of corresponding pixel of the source image.
+/// `minchan()` similarly computes the minimum value of all channels.
+///
+/// @version 2.3.10
+
+ImageBuf OIIO_API maxchan (const ImageBuf& A, ROI roi={}, int nthreads=0);
+bool OIIO_API maxchan (ImageBuf &dst, const ImageBuf& A,
+                       ROI roi={}, int nthreads=0);
+
+ImageBuf OIIO_API minchan (const ImageBuf& src, ROI roi={}, int nthreads=0);
+bool OIIO_API minchan (ImageBuf &dst, const ImageBuf& src,
+                       ROI roi={}, int nthreads=0);
+/// @}
 
 
 /// Return pixel values that are a contrast-remap of the corresponding
@@ -979,6 +1193,36 @@ OIIO_API bool contrast_remap (ImageBuf &dst, const ImageBuf &src,
                     cspan<float> min=0.0f, cspan<float> max=1.0f,
                     cspan<float> scontrast=1.0f, cspan<float> sthresh=0.5f,
                     ROI={}, int nthreads=0);
+
+
+/// @defgroup saturate (Adjust saturation of color channels)
+/// @{
+///
+/// Increase or decrease color saturation of the image.
+///
+/// The `saturate` operation returns (or copies into `dst`) the pixels of
+/// `src` within the ROI, and in the process adjusts the color saturation of
+/// the three consecutive channels starting with `firstchannel` based on the
+/// `scale` parameter: 0.0 fully desaturates to a greyscale image of
+/// percaptually equivalent luminance, 1.0 leaves the colors unchanged,
+/// `scale` values inside this range interpolate between them, and `scale` > 1
+/// would increase apparent color saturation.
+///
+/// Channels that are within the range of `roi.chbegin` to `roi.chend-1`, but
+/// outside the range of `firstchannel` to `firstchannel+2` are simply copied
+/// unaltered. Only three channels at a time can be desaturated, by default
+/// the first three channels, though `firstchannel` may be used to specify a
+/// different subset of channels. It is allowed for `src` and `dst` to be the
+/// same image.
+///
+/// @version 2.4+
+
+ImageBuf OIIO_API saturate (const ImageBuf &src, float scale = 0.0f,
+                            int firstchannel = 0, ROI roi={}, int nthreads=0);
+bool OIIO_API saturate (ImageBuf &dst, const ImageBuf &src, float scale = 0.0f,
+                        int firstchannel = 0, ROI roi={}, int nthreads=0);
+/// @}
+
 
 
 /// @defgroup color_map (Remap value range by spline or name)
@@ -1092,6 +1336,7 @@ PixelStats OIIO_API computePixelStats (const ImageBuf &src,
 // DEPRECATED(1.9): with C++11 move semantics, there's no reason why
 // stats needs to be passed as a parameter instead of returned.
 #ifndef DOXYGEN_SHOULD_SKIP_THIS
+OIIO_DEPRECATED("use version that returns PixelStats (1.9)")
 bool OIIO_API computePixelStats (PixelStats &stats, const ImageBuf &src,
                                  ROI roi={}, int nthreads=0);
 #endif
@@ -1108,6 +1353,27 @@ struct CompareResults {
     imagesize_t nwarn, nfail;
     bool error;
 };
+
+/// Numerically compare two images.  The difference threshold (for any
+/// individual color channel in any pixel) for a "failure" is `failthresh`,
+/// and for a "warning" is `warnthresh`.  If nonzero, then `failrelative` and
+/// `warnrelative` are alternate thresholds as a portion the mean of the
+/// absolute values of the two images. It only warns or fails if both criteria
+/// are met. More formally, a value comparison will fail if
+///
+///     abs(A-B) > failthresh && abs(A-B)/((abs(A)+abs(B))/2) > failrelative
+///
+/// and analogously for warning.
+///
+/// The results are stored in `result`.  If `roi` is defined, pixels will be
+/// compared for the pixel and channel range that is specified.  If `roi` is
+/// not defined, the comparison will be for all channels, on the union of the
+/// defined pixel windows of the two images (for either image, undefined
+/// pixels will be assumed to be black).
+CompareResults OIIO_API compare (const ImageBuf &A, const ImageBuf &B,
+                                 float failthresh, float warnthresh,
+                                 float failrelative, float warnrelative,
+                                 ROI roi={}, int nthreads=0);
 
 /// Numerically compare two images.  The difference threshold (for any
 /// individual color channel in any pixel) for a "failure" is
@@ -1144,6 +1410,7 @@ int OIIO_API compare_Yee (const ImageBuf &A, const ImageBuf &B,
 #ifndef DOXYGEN_SHOULD_SKIP_THIS
 // DEPRECATED(1.9): with C++11 move semantics, there's no reason why
 // result needs to be passed as a parameter instead of returned.
+OIIO_DEPRECATED("use version that returns CompareResults (1.9)")
 bool OIIO_API compare (const ImageBuf &A, const ImageBuf &B,
                        float failthresh, float warnthresh,
                        CompareResults &result, ROI roi={}, int nthreads=0);
@@ -1198,7 +1465,7 @@ inline bool isMonochrome (const ImageBuf &src, ROI roi, int nthreads=0) {
 
 
 /// Count how many pixels in the ROI match a list of colors. The colors to
-/// match are in::
+/// match are in:
 /// 
 ///     colors[0 ... nchans-1]
 ///     colors[nchans ... 2*nchans-1]
@@ -1216,7 +1483,7 @@ inline bool isMonochrome (const ImageBuf &src, ROI roi, int nthreads=0) {
 /// 8 bit images, but allows a wee bit of imprecision for float images.
 ///
 /// Upon success, return `true` and store the number of pixels that matched
-/// each color `count[..ncolors-1]`.  If there is an error, returns `false`
+/// each color `count[0..ncolors-1]`.  If there is an error, returns `false`
 /// and sets an appropriate error message set in `src`.
 bool OIIO_API color_count (const ImageBuf &src, imagesize_t *count,
                            int ncolors, cspan<float> color,
@@ -1255,7 +1522,7 @@ bool OIIO_API color_range_check (const ImageBuf &src,
 OIIO_API ROI nonzero_region (const ImageBuf &src, ROI roi={}, int nthreads=0);
 
 
-/// Compute the SHA-1 byte hash for all the pixels in the specifed region of
+/// Compute the SHA-1 byte hash for all the pixels in the specified region of
 /// the image.  If `blocksize` > 0, the function will compute separate SHA-1
 /// hashes of each `blocksize` batch of scanlines, then return a hash of the
 /// individual hashes.  This is just as strong a hash, but will NOT match a
@@ -1276,6 +1543,9 @@ std::string OIIO_API computePixelHashSHA1 (const ImageBuf &src,
 /// values `[min,max]`. Values < `min` count for bin 0, values > `max` count
 /// for bin `nbins-1`. If `ignore_empty` is `true`, no counts will be
 /// incremented for any pixels whose value is 0 in all channels.
+///
+/// If there was an error, the returned vector will be empty, and an error
+/// message will be retrievable from src.geterror().
 OIIO_API
 std::vector<imagesize_t> histogram (const ImageBuf &src, int channel=0,
                                     int bins=256, float min=0.0f, float max=1.0f,
@@ -1285,12 +1555,14 @@ std::vector<imagesize_t> histogram (const ImageBuf &src, int channel=0,
 
 #ifndef DOXYGEN_SHOULD_SKIP_THIS
 /// DEPRECATED(1.9)
+OIIO_DEPRECATED("use version that returns vector (1.9)")
 bool OIIO_API histogram (const ImageBuf &src, int channel,
                          std::vector<imagesize_t> &histogram, int bins=256,
                          float min=0, float max=1, imagesize_t *submin=nullptr,
                          imagesize_t *supermax=nullptr, ROI roi={});
 
 // DEPRECATED(1.9): never liked this.
+OIIO_DEPRECATED("this useless function is going away (1.9)")
 bool OIIO_API histogram_draw (ImageBuf &dst,
                               const std::vector<imagesize_t> &histogram);
 #endif
@@ -1313,10 +1585,14 @@ bool OIIO_API histogram_draw (ImageBuf &dst,
 /// don't scale with the width, and are therefore probably less useful
 /// in most cases.
 ///
+/// The ImageBuf that is returned indicates if there was an error, in which
+/// case return.has_error() will be true and return.geterror() can be used
+/// to retrieve an error message.
 ImageBuf OIIO_API make_kernel (string_view name, float width, float height,
                                float depth = 1.0f, bool normalize = true);
 #ifndef DOXYGEN_SHOULD_SKIP_THIS
 // DEPRECATED(1.9):
+OIIO_DEPRECATED("use version that returns ImageBuf (1.9)")
 inline bool make_kernel (ImageBuf &dst, string_view name,
                          float width, float height, float depth = 1.0f,
                          bool normalize = true) {
@@ -1565,6 +1841,10 @@ bool OIIO_API erode (ImageBuf &dst, const ImageBuf &src,
 /// a color space transformation. In-place operations (`dst` == `src`) are
 /// supported.
 ///
+/// The first three channels are presumed to be the color to be
+/// transformed, and the fourth channel (if it exists) is presumed to be
+/// alpha. Any additional channels will be simply copied unaltered.
+///
 /// If OIIO was built with OpenColorIO support enabled, then the
 /// transformation may be between any two spaces supported by the active
 /// OCIO configuration, or may be a "look" transformation created by
@@ -1581,7 +1861,7 @@ bool OIIO_API erode (ImageBuf &dst, const ImageBuf &src,
 ///             establish a context (for example, a shot-specific transform).
 /// @param  processor
 ///             For the varieties of `colorconvert()` that have a
-///             `processor` paramater, it is a raw `ColorProcessor*` object
+///             `processor` parameter, it is a raw `ColorProcessor*` object
 ///             that implements the color transformation. This is a special
 ///             object created by a `ColorConfig` (see `OpenImageIO/color.h`
 ///             for details).
@@ -1603,7 +1883,7 @@ bool OIIO_API erode (ImageBuf &dst, const ImageBuf &src,
 ImageBuf OIIO_API colorconvert (const ImageBuf &src,
                       string_view fromspace, string_view tospace, bool unpremult=true,
                       string_view context_key="", string_view context_value="",
-                      ColorConfig *colorconfig=nullptr,
+                      const ColorConfig* colorconfig = nullptr,
                       ROI roi={}, int nthreads=0);
 
 /// Transform using a ColorProcessor, returning an ImageBuf result.
@@ -1614,7 +1894,7 @@ ImageBuf OIIO_API colorconvert (const ImageBuf &src,
 bool OIIO_API colorconvert (ImageBuf &dst, const ImageBuf &src,
                   string_view fromspace, string_view tospace, bool unpremult=true,
                   string_view context_key="", string_view context_value="",
-                  ColorConfig *colorconfig=nullptr,
+                  const ColorConfig* colorconfig = nullptr,
                   ROI roi={}, int nthreads=0);
 
 /// Transform using a ColorProcessor, storing reults into an existing ImageBuf.
@@ -1641,6 +1921,10 @@ inline bool colorconvert (float *color, int nchannels,
 /// transform specified by a 4x4 matrix.  In-place operations
 /// (`dst` == `src`) are supported.
 ///
+/// The first three channels are presumed to be the color to be
+/// transformed, and the fourth channel (if it exists) is presumed to be
+/// alpha. Any additional channels will be simply copied unaltered.
+///
 /// @param  M
 ///             A 4x4 matrix. Following Imath conventions, the color is a
 ///             row vector and the matrix has the "translation" part in
@@ -1655,18 +1939,23 @@ inline bool colorconvert (float *color, int nchannels,
 ///             "not pre-multiplied colors").
 ///
 /// @version 2.1+
+///
 ImageBuf OIIO_API colormatrixtransform (const ImageBuf &src,
-                                    const Imath::M44f& M, bool unpremult=true,
-                                    ROI roi={}, int nthreads=0);
+                                        M44fParam M, bool unpremult=true,
+                                        ROI roi={}, int nthreads=0);
 /// Write to an existing image `dst` (allocating if it is uninitialized).
 bool OIIO_API colormatrixtransform (ImageBuf &dst, const ImageBuf &src,
-                                    const Imath::M44f& M, bool unpremult=true,
+                                    M44fParam M, bool unpremult=true,
                                     ROI roi={}, int nthreads=0);
 
 
 /// Return a copy of the pixels of `src` within the ROI, applying an
 /// OpenColorIO "look" transform to the pixel values. In-place operations
 /// (`dst` == `src`) are supported.
+///
+/// The first three channels are presumed to be the color to be
+/// transformed, and the fourth channel (if it exists) is presumed to be
+/// alpha. Any additional channels will be simply copied unaltered.
 ///
 /// @param  looks
 ///             The looks to apply (comma-separated).
@@ -1695,14 +1984,14 @@ ImageBuf OIIO_API ociolook (const ImageBuf &src, string_view looks,
                             string_view fromspace, string_view tospace,
                             bool unpremult=true, bool inverse=false,
                             string_view context_key="", string_view context_value="",
-                            ColorConfig *colorconfig=nullptr,
+                            const ColorConfig* colorconfig = nullptr,
                             ROI roi={}, int nthreads=0);
 /// Write to an existing image `dst` (allocating if it is uninitialized).
 bool OIIO_API ociolook (ImageBuf &dst, const ImageBuf &src, string_view looks,
                         string_view fromspace, string_view tospace,
                         bool unpremult=true, bool inverse=false,
                         string_view context_key="", string_view context_value="",
-                        ColorConfig *colorconfig=nullptr,
+                        const ColorConfig* colorconfig = nullptr,
                         ROI roi={}, int nthreads=0);
 
 
@@ -1710,12 +1999,16 @@ bool OIIO_API ociolook (ImageBuf &dst, const ImageBuf &src, string_view looks,
 /// "display" transform to the pixel values. In-place operations
 /// (`dst` == `src`) are supported.
 ///
+/// The first three channels are presumed to be the color to be
+/// transformed, and the fourth channel (if it exists) is presumed to be
+/// alpha. Any additional channels will be simply copied unaltered.
+///
 /// @param  display
-///             The OCIO "display" to apply. If this is the empty string,
-///             the default display will be used.
+///             The OCIO "display" to apply. If this is `"default"` or the
+///             empty string `""`, the default display will be used.
 /// @param  view
-///             The OCIO "view" to use. If this is the empty string, the
-///             default view for this display will be used.
+///             The OCIO "view" to use. If this is `"default"` or the empty
+///             string `""`, the default view for this display will be used.
 /// @param  fromspace
 ///             If `fromspace` is not supplied, it will assume that the
 ///             source color space is whatever is indicated by the source
@@ -1746,22 +2039,45 @@ bool OIIO_API ociolook (ImageBuf &dst, const ImageBuf &src, string_view looks,
 ImageBuf OIIO_API ociodisplay (const ImageBuf &src,
                                string_view display, string_view view,
                                string_view fromspace="", string_view looks="",
-                               bool unpremult=true,
+                               bool unpremult=true, bool inverse=false,
                                string_view context_key="", string_view context_value="",
-                               ColorConfig *colorconfig=nullptr,
+                               const ColorConfig* colorconfig = nullptr,
                                ROI roi={}, int nthreads=0);
 /// Write to an existing image `dst` (allocating if it is uninitialized).
 bool OIIO_API ociodisplay (ImageBuf &dst, const ImageBuf &src,
                            string_view display, string_view view,
                            string_view fromspace="", string_view looks="",
-                           bool unpremult=true,
+                           bool unpremult=true, bool inverse=false,
                            string_view context_key="", string_view context_value="",
-                           ColorConfig *colorconfig=nullptr,
+                           const ColorConfig* colorconfig = nullptr,
                            ROI roi={}, int nthreads=0);
+
+#ifndef OIIO_DOXYGEN
+// OIIO_DEPRECATED("prefer the kind that takes an `inverse` parameter (2.5)")
+ImageBuf OIIO_API ociodisplay (const ImageBuf &src,
+                               string_view display, string_view view,
+                               string_view fromspace, string_view looks,
+                               bool unpremult,
+                               string_view context_key, string_view context_value="",
+                               const ColorConfig* colorconfig = nullptr,
+                               ROI roi={}, int nthreads=0);
+// OIIO_DEPRECATED("prefer the kind that takes an `inverse` parameter (2.5)")
+bool OIIO_API ociodisplay (ImageBuf &dst, const ImageBuf &src,
+                           string_view display, string_view view,
+                           string_view fromspace, string_view looks,
+                           bool unpremult,
+                           string_view context_key, string_view context_value="",
+                           const ColorConfig* colorconfig = nullptr,
+                           ROI roi={}, int nthreads=0);
+#endif
 
 
 /// Return the pixels of `src` within the ROI, applying an OpenColorIO
 /// "file" transform. In-place operations (`dst` == `src`) are supported.
+///
+/// The first three channels are presumed to be the color to be
+/// transformed, and the fourth channel (if it exists) is presumed to be
+/// alpha. Any additional channels will be simply copied unaltered.
 ///
 /// @param  name
 ///             The name of the file containing the transform information.
@@ -1782,13 +2098,13 @@ bool OIIO_API ociodisplay (ImageBuf &dst, const ImageBuf &src,
 ImageBuf OIIO_API ociofiletransform (const ImageBuf &src,
                                      string_view name,
                                      bool unpremult=true, bool inverse=false,
-                                     ColorConfig *colorconfig=nullptr,
+                                     const ColorConfig* colorconfig = nullptr,
                                      ROI roi={}, int nthreads=0);
 /// Write to an existing image `dst` (allocating if it is uninitialized).
 bool OIIO_API ociofiletransform (ImageBuf &dst, const ImageBuf &src,
                                  string_view name,
                                  bool unpremult=true, bool inverse=false,
-                                 ColorConfig *colorconfig=nullptr,
+                                 const ColorConfig* colorconfig = nullptr,
                                  ROI roi={}, int nthreads=0);
 
 
@@ -1848,6 +2164,11 @@ enum MakeTextureMode {
 /// The `make_texture()` function turns an image into a tiled, MIP-mapped,
 /// texture file and write it to disk (outputfilename).
 ///
+/// The return value is `true` for success, `false` if an error occurred. If
+/// there was an error, any error message will be retrievable via the global
+/// `OIIO::geterror()` call (since there is no destination `ImageBuf` in
+/// which to store it).
+///
 /// Named fields in config:
 ///
 ///    - format : Data format of the texture file (default: UNKNOWN = same
@@ -1865,6 +2186,8 @@ enum MakeTextureMode {
 ///    - `worldtoscreen` (matrix) : World-to-screen space matrix of the view.
 ///    - `worldtoNDC` (matrix) :    World-to-NDC space matrix of the view.
 ///    - `wrapmodes` (string) :     Default: "black,black"
+///    - `handed` (string) :        "left" or "right" reveals the handedness of
+///                                 the coordinates for normal maps. ("")
 ///    - `maketx:verbose` (int) :   How much detail should go to outstream (0).
 ///    - `maketx:runstats` (int) :  If nonzero, print run stats to outstream (0).
 ///    - `maketx:resize` (int) :    If nonzero, resize to power of 2. (0)
@@ -1933,15 +2256,16 @@ enum MakeTextureMode {
 ///                           If set, will specify the output file format.
 ///                           (default: "", meaning infer the format from
 ///                           the output filename)
-///    - `maketx:prman_metadata` (int) :
-///                           If set, output some metadata that PRMan will
-///                           need for its textures. (0)
 ///    - `maketx:oiio_options` (int) :
 ///                           (Deprecated; all are handled by default)
 ///    - `maketx:prman_options` (int) :
 ///                           If nonzero, override a whole bunch of settings
 ///                           as needed to make textures that are
-///                           compatible with PRMan. (0)
+///                           compatible with PRMan. This also enables
+///                           prman_metadata. (0)
+///    - `maketx:prman_metadata` (int) :
+///                           If set, output some metadata that PRMan will
+///                           need for its textures. (0)
 ///    - `maketx:mipimages` (string) :
 ///                           Semicolon-separated list of alternate images
 ///                           to be used for individual MIPmap levels,
@@ -1975,6 +2299,35 @@ enum MakeTextureMode {
 ///                           ("height"), a normal map ("normal"), or
 ///                           automatically determine it from the number
 ///                           of channels ("auto", the default).
+///    - `maketx:uvslopes_scale` (float) :
+///                           If nonzero, when used in MakeTxBumpWithSlopes
+///                           mode, this computes derivatives for the
+///                           bumpslopes data in UV space rather than in
+///                           texel space, and divides them by this scale
+///                           factor. The default is 0, disabling the
+///                           feature. If you use this feature, a suggested
+///                           value is 256.
+///    - `maketx:cdf` (int) :
+///                           If nonzero, will write a Gaussian CDF and
+///                           Inverse Gaussian CDF as per-channel metadata
+///                           in the texture, which can be used by shaders
+///                           to implement Histogram-Preserving Blending.
+///                           This is only useful when the texture being
+///                           created is written to an image format that
+///                           supports arbitrary metadata (e.g. OpenEXR).
+///                           (See Burley, "On Histogram-Preserving Blending
+///                           for Randomized Texture Tiling," JCGT 8(4), 2019,
+///                           and Heitz/Neyret, "High-Performance By-Example
+///                           Noise using a Histogram-Preserving Blending
+///                           Operator," ACM SIGGRAPH / Eurographics Symposium
+///                           on High-Performance Graphics 2018.) (default: 0)
+///    - `maketx:cdfsigma` (float) :
+///                           When `maketx:cdf` is active, determines the
+///                           CDF sigma (default: 1.0/6).
+///    - `maketx:cdfbits` (int) :
+///                           When `maketx:cdf` is active, determines the
+///                           number of bits to use for the size of the CDF
+///                           table. (default: 8, meaning 256 bins)
 ///
 /// @param  mode
 ///    Describes what type of texture file we are creating and may
@@ -2002,8 +2355,9 @@ enum MakeTextureMode {
 /// @param  outstream
 ///     If not `nullptr`, it should point to a stream (for example,
 ///     `&std::out`, or a pointer to a local `std::stringstream` to capture
-///     output), which is where console output and error messages will be
-///     deposited.
+///     output), which is where console output and errors will be
+///     deposited. Note that error messages will also be retrievable from
+///     OIIO::geterror().
 ///
 ///
 
@@ -2032,22 +2386,22 @@ bool OIIO_API make_texture (MakeTextureMode mode,
 /// @}
 
 
-/// Convert an OpenCV cv::Mat into an ImageBuf, copying the pixels
-/// (optionally converting to the pixel data type specified by `convert`, if
-/// not UNKNOWN, which means to preserve the original data type if
-/// possible).  Return true if ok, false if it couldn't figure out how to
-/// make the conversion from Mat to ImageBuf. If OpenImageIO was compiled
-/// without OpenCV support, this function will return an empty image with
-/// error message set.
+/// Convert an OpenCV cv::Mat into an ImageBuf, copying the pixels (optionally
+/// converting to the pixel data type specified by `convert`, if not UNKNOWN,
+/// which means to preserve the original data type if possible).  Return true
+/// if ok, false if it was not able to make the conversion from Mat to
+/// ImageBuf. Any error messages can be retrieved by calling `geterror()` on
+/// the returned ImageBuf. If OpenImageIO was compiled without OpenCV support,
+/// this function will return false.
 OIIO_API ImageBuf
 from_OpenCV (const cv::Mat& mat, TypeDesc convert = TypeUnknown,
              ROI roi={}, int nthreads=0);
 
 /// Construct an OpenCV cv::Mat containing the contents of ImageBuf src, and
-/// return true. If it is not possible, or if OpenImageIO was compiled
-/// without OpenCV support, then return false. Note that OpenCV only
-/// supports up to 4 channels, so >4 channel images will be truncated in the
-/// conversion.
+/// return true. If it is not possible, or if OpenImageIO was compiled without
+/// OpenCV support, then return false. Any error messages can be retrieved by
+/// calling OIIO::geterror(). Note that OpenCV only supports up to 4 channels,
+/// so >4 channel images will be truncated in the conversion.
 OIIO_API bool to_OpenCV (cv::Mat& dst, const ImageBuf& src,
                          ROI roi={}, int nthreads=0);
 
@@ -2063,6 +2417,7 @@ ImageBuf OIIO_API capture_image (int cameranum = 0,
 
 #ifndef DOXYGEN_SHOULD_SKIP_THIS
 // DEPRECATED(1.9):
+OIIO_DEPRECATED("use version that returns ImageBuf (1.9)")
 inline bool capture_image (ImageBuf &dst, int cameranum = 0,
                            TypeDesc convert=TypeUnknown) {
     dst = capture_image (cameranum, convert);
@@ -2081,6 +2436,7 @@ inline bool capture_image (ImageBuf &dst, int cameranum = 0,
 ImageBuf OIIO_API from_IplImage (const IplImage *ipl,
                                  TypeDesc convert=TypeUnknown);
 // DEPRECATED(1.9):
+OIIO_DEPRECATED("use from_OpenCV (1.9)")
 inline bool from_IplImage (ImageBuf &dst, const IplImage *ipl,
                            TypeDesc convert=TypeUnknown) {
     dst = from_IplImage (ipl, convert);
@@ -2089,6 +2445,7 @@ inline bool from_IplImage (ImageBuf &dst, const IplImage *ipl,
 
 // DEPRECATED(2.0). The OpenCV 1.x era IplImage-based functions should be
 // avoided, giving preference to from_OpenCV.
+OIIO_DEPRECATED("use from_OpenCV (2.9)")
 OIIO_API IplImage* to_IplImage (const ImageBuf &src);
 #endif  // DOXYGEN_SHOULD_SKIP_THIS
 
@@ -2169,16 +2526,19 @@ bool OIIO_API deep_holdout (ImageBuf &dst, const ImageBuf &src,
 
 #ifndef DOXYGEN_SHOULD_SKIP_THIS
 
+//OIIO_DEPRECATED("use version that takes cspan<> instead of raw pointer (2.0)")
 inline bool fill (ImageBuf &dst, const float *values,
                   ROI roi={}, int nthreads=0) {
     int nc (roi.defined() ? roi.nchannels() : dst.nchannels());
     return fill (dst, {values, nc}, roi, nthreads);
 }
+//OIIO_DEPRECATED("use version that takes cspan<> instead of raw pointer (2.0)")
 inline bool fill (ImageBuf &dst, const float *top, const float *bottom,
                   ROI roi={}, int nthreads=0) {
     int nc (roi.defined() ? roi.nchannels() : dst.nchannels());
     return fill (dst, {top, nc}, {bottom, nc}, roi, nthreads);
 }
+//OIIO_DEPRECATED("use version that takes cspan<> instead of raw pointer (2.0)")
 inline bool fill (ImageBuf &dst, const float *topleft, const float *topright,
                   const float *bottomleft, const float *bottomright,
                   ROI roi={}, int nthreads=0) {
@@ -2187,6 +2547,7 @@ inline bool fill (ImageBuf &dst, const float *topleft, const float *topright,
                  {bottomright, nc}, roi, nthreads);
 }
 
+//OIIO_DEPRECATED("use version that takes cspan<> instead of raw pointer (2.0)")
 inline bool checker (ImageBuf &dst, int width, int height, int depth,
                      const float *color1, const float *color2,
                      int xoffset=0, int yoffset=0, int zoffset=0,
@@ -2196,44 +2557,54 @@ inline bool checker (ImageBuf &dst, int width, int height, int depth,
                     xoffset, yoffset, zoffset, roi, nthreads);
 }
 
+//OIIO_DEPRECATED("use version that takes cspan<> instead of raw pointer (2.0)")
 inline bool add (ImageBuf &dst, const ImageBuf &A, const float *B,
                  ROI roi={}, int nthreads=0) {
     return add (dst, A, {B,A.nchannels()}, roi, nthreads);
 }
+//OIIO_DEPRECATED("use version that takes cspan<> instead of raw pointer (2.0)")
 inline bool sub (ImageBuf &dst, const ImageBuf &A, const float *B,
                  ROI roi={}, int nthreads=0) {
     return sub (dst, A, {B,A.nchannels()}, roi, nthreads);
 }
+//OIIO_DEPRECATED("use version that takes cspan<> instead of raw pointer (2.0)")
 inline bool absdiff (ImageBuf &dst, const ImageBuf &A, const float *B,
                      ROI roi={}, int nthreads=0) {
     return absdiff (dst, A, cspan<float>(B,A.nchannels()), roi, nthreads);
 }
+//OIIO_DEPRECATED("use version that takes cspan<> instead of raw pointer (2.0)")
 inline bool mul (ImageBuf &dst, const ImageBuf &A, const float *B,
                  ROI roi={}, int nthreads=0) {
     return mul (dst, A, {B, A.nchannels()}, roi, nthreads);
 }
+//OIIO_DEPRECATED("use version that takes cspan<> instead of raw pointer (2.0)")
 inline bool div (ImageBuf &dst, const ImageBuf &A, const float *B,
                  ROI roi={}, int nthreads=0) {
     return div (dst, A, {B, A.nchannels()}, roi, nthreads);
 }
+//OIIO_DEPRECATED("use version that takes cspan<> instead of raw pointer (2.0)")
 inline bool mad (ImageBuf &dst, const ImageBuf &A, const float *B,
                  const ImageBuf &C, ROI roi={}, int nthreads=0) {
     return mad (dst, A, {B, A.nchannels()}, C, roi, nthreads);
 }
+//OIIO_DEPRECATED("use version that takes cspan<> instead of raw pointer (2.0)")
 inline bool mad (ImageBuf &dst, const ImageBuf &A, const ImageBuf &B,
                  const float *C, ROI roi={}, int nthreads=0) {
     return mad (dst, A, C, B, roi, nthreads);
 }
+//OIIO_DEPRECATED("use version that takes cspan<> instead of raw pointer (2.0)")
 inline bool mad (ImageBuf &dst, const ImageBuf &A, const float *B,
                  const float *C, ROI roi={}, int nthreads=0) {
     return mad (dst, A, {B, A.nchannels()}, {C, A.nchannels()}, roi, nthreads);
 }
 
+//OIIO_DEPRECATED("use version that takes cspan<> instead of raw pointer (2.0)")
 inline bool pow (ImageBuf &dst, const ImageBuf &A, const float *B,
                  ROI roi={}, int nthreads=0) {
     return pow (dst, A, {B, A.nchannels()}, roi, nthreads);
 }
 
+//OIIO_DEPRECATED("use version that takes cspan<> instead of raw pointer (2.0)")
 inline bool channel_sum (ImageBuf &dst, const ImageBuf &src,
                          const float *weights=nullptr, ROI roi={},
                          int nthreads=0) {
@@ -2241,6 +2612,7 @@ inline bool channel_sum (ImageBuf &dst, const ImageBuf &src,
                         roi, nthreads);
 }
 
+//OIIO_DEPRECATED("use version that takes cspan<> instead of raw pointer (2.0)")
 inline bool channels (ImageBuf &dst, const ImageBuf &src,
                       int nchannels, const int *channelorder,
                       const float *channelvalues=nullptr,
@@ -2253,6 +2625,7 @@ inline bool channels (ImageBuf &dst, const ImageBuf &src,
                      shuffle_channel_names, nthreads);
 }
 
+//OIIO_DEPRECATED("use version that takes cspan<> instead of raw pointer (2.0)")
 inline bool clamp (ImageBuf &dst, const ImageBuf &src,
                    const float *min=nullptr, const float *max=nullptr,
                    bool clampalpha01 = false,
@@ -2262,12 +2635,14 @@ inline bool clamp (ImageBuf &dst, const ImageBuf &src,
                   roi, nthreads);
 }
 
+//OIIO_DEPRECATED("use version that takes span<> instead of raw pointer (2.0)")
 inline bool isConstantColor (const ImageBuf &src, float *color,
                              ROI roi={}, int nthreads=0) {
     int nc = roi.defined() ? std::min(roi.chend,src.nchannels()) : src.nchannels();
     return isConstantColor (src, {color, color ? nc : 0}, roi, nthreads);
 }
 
+//OIIO_DEPRECATED("use version that takes cspan<> instead of raw pointer (2.0)")
 inline bool color_count (const ImageBuf &src, imagesize_t *count,
                          int ncolors, const float *color,
                          const float *eps=nullptr,
@@ -2278,6 +2653,7 @@ inline bool color_count (const ImageBuf &src, imagesize_t *count,
                         roi, nthreads);
 }
 
+//OIIO_DEPRECATED("use version that takes span<> instead of raw pointer (2.0)")
 inline bool color_range_check (const ImageBuf &src, imagesize_t *lowcount,
                                imagesize_t *highcount, imagesize_t *inrangecount,
                                const float *low, const float *high,
@@ -2287,6 +2663,7 @@ inline bool color_range_check (const ImageBuf &src, imagesize_t *lowcount,
                               roi, nthreads);
 }
 
+//OIIO_DEPRECATED("use version that takes cspan<> instead of raw pointer (2.0)")
 inline bool render_text (ImageBuf &dst, int x, int y, string_view text,
                          int fontsize, string_view fontname,
                          const float *textcolor) {

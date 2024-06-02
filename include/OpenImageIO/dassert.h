@@ -1,6 +1,6 @@
-// Copyright 2008-present Contributors to the OpenImageIO project.
-// SPDX-License-Identifier: BSD-3-Clause
-// https://github.com/OpenImageIO/oiio/blob/master/LICENSE.md
+// Copyright Contributors to the OpenImageIO project.
+// SPDX-License-Identifier: Apache-2.0
+// https://github.com/AcademySoftwareFoundation/OpenImageIO
 
 
 #pragma once
@@ -122,7 +122,7 @@
 /// with appropriate fallbacks for older C++ standards.
 #if (__cplusplus >= 201700L) /* FIXME - guess the token, fix when C++17 */
 #    define OIIO_STATIC_ASSERT(cond) static_assert(cond)
-#else /* (__cplusplus >= 201103L) */
+#else
 #    define OIIO_STATIC_ASSERT(cond) static_assert(cond, "")
 #endif
 

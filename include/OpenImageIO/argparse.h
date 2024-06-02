@@ -1,6 +1,6 @@
-// Copyright 2008-present Contributors to the OpenImageIO project.
-// SPDX-License-Identifier: BSD-3-Clause
-// https://github.com/OpenImageIO/oiio/blob/master/LICENSE.md
+// Copyright Contributors to the OpenImageIO project.
+// SPDX-License-Identifier: BSD-3-Clause and Apache-2.0
+// https://github.com/AcademySoftwareFoundation/OpenImageIO
 
 
 #pragma once
@@ -171,7 +171,7 @@ OIIO_NAMESPACE_BEGIN
 /////////////////////////////////////////////////////////////////////////////
 
 
-class OIIO_API ArgParse {
+class OIIO_UTIL_API ArgParse {
 public:
     class Arg;  // Forward declarion of Arg
 
@@ -236,6 +236,10 @@ public:
     /// like any other argument.
     ArgParse& add_help(bool add_help);
 
+    /// Calling `add_version()` adds a `--version` argument, which will print
+    /// the version string supplied.
+    ArgParse& add_version(string_view version_string);
+
     /// By default, if the command line arguments do not conform to what is
     /// declared to ArgParse (for example, if unknown commands are
     /// encountered, required arguments are not found, etc.), the ArgParse
@@ -255,6 +259,18 @@ public:
     /// Reveal whether the current state is aborted.
     bool aborted() const;
 
+    /// Set whether current actions should run.
+    void running(bool run);
+
+    /// Reveal whether current actions should run.
+    bool running() const;
+
+    /// Reveal the current argument that is being parsed.
+    int current_arg() const;
+
+    /// Set the next argument to be processed. Use with extreme caution!
+    void set_next_arg(int nextarg);
+
     /// @}
 
     // ------------------------------------------------------------------
@@ -265,10 +281,14 @@ public:
     /// ok, -1 if it's a malformed command line.
     int parse_args(int argc, const char** argv);
 
+    /// Is there a pending error message waiting to be retrieved?
+    bool has_error() const;
+
     /// Return any error messages generated during the course of parse()
-    /// (and clear any error flags).  If no error has occurred since the
-    /// last time geterror() was called, it will return an empty string.
-    std::string geterror() const;
+    /// (and by default, clear any error flags).  If no error has occurred
+    /// since the last time geterror() was called, it will return an empty
+    /// string.
+    std::string geterror(bool clear = true) const;
 
     /// Return the name of the program. This will be either derived from the
     /// original command line that launched this application, or else
@@ -397,7 +417,7 @@ public:
     ///       .help("Verbose mode")
     ///       .action(Arg::store_true());
     ///
-    class OIIO_API Arg {
+    class OIIO_UTIL_API Arg {
     public:
         // Arg constructor. This should only be called by
         // ArgParse::add_argument().
@@ -479,6 +499,9 @@ public:
 
         /// Mark the argument as hidden from the help message.
         Arg& hidden();
+
+        /// Always run, even when ArgParse.running() is false.
+        Arg& always_run();
 
         /// Set the action for this argument to store 1 in the destination
         /// attribute. Initialize the destination attribute to 0 now. Do not
